@@ -81,6 +81,7 @@
 
   async function loadPoints() {
     try {
+      listEl.innerHTML = `<div class="text-sm text-slate-400 col-span-full">載入中…</div>`;
       state.points = await A.jsonFetch(A.api('/points'));
       listEl.innerHTML = '';
       if (!state.points.length) {
@@ -323,8 +324,9 @@
       <div class="flex gap-1 flex-shrink-0">
         ${isDismissed
           ? `<button data-restore="${exp.id}" class="px-2 py-0.5 rounded bg-brand-100 text-brand-700 hover:bg-brand-200">復原</button>`
-          : `<button data-dismiss="${exp.id}" class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 hover:bg-emerald-200">✓ 已用</button>`
+          : `<button data-dismiss="${exp.id}" class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 hover:bg-emerald-200">設定使用</button>`
         }
+        <button data-edit="${exp.id}" class="px-2 py-0.5 rounded bg-slate-100 text-slate-700 hover:bg-slate-200">編輯</button>
         <button data-delete="${exp.id}" class="px-2 py-0.5 rounded bg-rose-100 text-rose-700 hover:bg-rose-200">刪除</button>
       </div>`;
 
@@ -349,14 +351,26 @@
       await loadExpiries(pid);
     });
 
+    // Edit
+    row.querySelector('[data-edit]')?.addEventListener('click', () => {
+      expiryForm.eid.value = exp.id;
+      expiryForm.amount.value = exp.amount;
+      expiryForm.expiryDate.value = exp.expiryDate;
+      expiryForm.note.value = exp.note || '';
+      document.getElementById('expiryModalTitle').textContent = '編輯提醒';
+      document.getElementById('cancelEditExpiryBtn').classList.remove('hidden');
+    });
+
     return row;
   }
 
   async function loadExpiries(pointId) {
     try {
+      tlExpiries.classList.remove('hidden');
+      tlExpiryList.innerHTML = '<div class="text-xs text-slate-400">載入中…</div>';
       const expiries = await A.jsonFetch(A.api(`/points/${pointId}/expiries`));
+      state.currentExpiries = expiries;
       if (expiries.length) {
-        tlExpiries.classList.remove('hidden');
         tlExpiryList.innerHTML = '';
         for (const e of expiries) tlExpiryList.appendChild(expiryRowEl(e));
       } else {
@@ -371,9 +385,18 @@
     if (!state.currentPointId) return;
     expiryForm.reset();
     expiryForm.eid.value = '';
-    expiryModalTitle.textContent = '新增到期提醒';
+    document.getElementById('expiryModalTitle').textContent = '新增提醒';
+    document.getElementById('cancelEditExpiryBtn').classList.add('hidden');
     A.showError(expiryFormError, '');
     A.openModal('expiryModal');
+  });
+
+  document.getElementById('cancelEditExpiryBtn')?.addEventListener('click', () => {
+    expiryForm.reset();
+    expiryForm.eid.value = '';
+    document.getElementById('expiryModalTitle').textContent = '新增提醒';
+    document.getElementById('cancelEditExpiryBtn').classList.add('hidden');
+    A.showError(expiryFormError, '');
   });
 
   expiryForm?.addEventListener('submit', async (e) => {
@@ -394,7 +417,13 @@
       } else {
         await A.jsonFetch(A.api(`/points/${pid}/expiries`), { method: 'POST', body: data });
       }
-      A.closeModal('expiryModal');
+      
+      // Reset form to "Add" mode after successful save
+      expiryForm.reset();
+      expiryForm.eid.value = '';
+      document.getElementById('expiryModalTitle').textContent = '新增提醒';
+      document.getElementById('cancelEditExpiryBtn').classList.add('hidden');
+      
       await loadExpiries(pid);
     } catch (err) {
       A.showError(expiryFormError, err.message);

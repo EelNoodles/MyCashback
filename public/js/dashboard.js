@@ -72,7 +72,7 @@
 
   function eventCardEl(ev) {
     const card = document.createElement('div');
-    card.className = 'card p-3';
+    card.className = 'card p-3 cursor-pointer hover:shadow-md transition';
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const daysLeft = ev.endDate ? Math.ceil((new Date(ev.endDate) - today) / 86400000) : null;
@@ -117,8 +117,8 @@
 
     card.innerHTML = `
       <div class="flex items-start justify-between gap-3">
-        <div class="min-w-0">
-          <div class="font-medium truncate flex items-center gap-2">
+        <div class="min-w-0 flex-1">
+          <div class="font-medium truncate flex items-center gap-2 max-w-[200px]" title="${ev.title}">
             ${ev.title}
             ${ev.sourceUrl ? `<a href="${ev.sourceUrl}" target="_blank" class="text-brand-600 hover:text-brand-700 flex-shrink-0" title="開啟活動連結"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>` : ''}
           </div>
@@ -131,7 +131,33 @@
           ${cycleHtml}
         </div>
       </div>`;
+    
+    // Open details on click (ignore if clicked on the sourceUrl link)
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('a')) return;
+      openEventDetails(ev, tags, eventLeftStr, cycleHtml);
+    });
+    
     return card;
+  }
+
+  function openEventDetails(ev, tagsHtml, eventLeftStr, cycleHtml) {
+    document.getElementById('eventDetailsTitle').textContent = ev.title;
+    document.getElementById('eventDetailsContent').innerHTML = `
+      <div class="text-sm text-slate-600">
+        <div class="mb-2"><strong>活動期間：</strong> ${A.fmtDateOnly(ev.startDate)} ~ ${A.fmtDateOnly(ev.endDate)}</div>
+        <div class="mb-2"><strong>倒數計時：</strong> ${eventLeftStr} ${cycleHtml}</div>
+        <div class="mb-2"><strong>回饋比例：</strong> ${ev.cashbackPercent ? ev.cashbackPercent + '%' : (ev.cashbackFixed ? '+' + A.fmtNumber(ev.cashbackFixed) : '—')}</div>
+        <div class="mb-2"><strong>最低門檻：</strong> ${ev.minimumSpend != null ? A.fmtNumber(ev.minimumSpend) : '—'}</div>
+        <div class="mb-2"><strong>回饋上限：</strong> ${ev.maxReward != null ? A.fmtNumber(ev.maxReward) : '—'}</div>
+        <div class="mb-2"><strong>適用卡片/支付：</strong> <div class="mt-1 flex flex-wrap gap-1">${tagsHtml}</div></div>
+        ${ev.description ? `<div class="mb-2"><strong>活動說明：</strong><p class="mt-1 whitespace-pre-wrap">${ev.description}</p></div>` : ''}
+        ${ev.sourceUrl ? `<div class="mb-2"><strong>參考連結：</strong> <a href="${ev.sourceUrl}" target="_blank" class="text-brand-600 hover:underline break-all">${ev.sourceUrl}</a></div>` : ''}
+      </div>
+    `;
+    const editBtn = document.getElementById('eventDetailsEditBtn');
+    editBtn.href = A.url('/cashback?edit=' + ev.id);
+    A.openModal('eventDetailsModal');
   }
 
   // ─── Expiry Alert Card ───
@@ -169,7 +195,7 @@
       <div class="flex gap-1 flex-shrink-0">
         <button data-dismiss-alert="${alert.id}" data-point="${alert.pointId}"
                 class="text-[10px] px-2 py-1 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
-                title="已使用 / 警報解除">✓ 已用</button>
+                title="已使用 / 警報解除">設定使用</button>
       </div>`;
 
     card.querySelector('[data-dismiss-alert]').addEventListener('click', async (e) => {

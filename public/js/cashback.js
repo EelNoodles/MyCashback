@@ -122,7 +122,7 @@
   // ─── Renderers ───
   function eventCardEl(ev) {
     const card = document.createElement('div');
-    card.className = 'card p-4';
+    card.className = 'card p-3 cursor-pointer hover:shadow-md transition';
     const info = calcCycleInfo(ev);
 
     const reward = ev.cashbackPercent
@@ -192,8 +192,8 @@
 
     card.innerHTML = `
       <div class="flex items-start justify-between gap-3">
-        <div class="min-w-0">
-          <div class="font-medium truncate flex items-center gap-2">
+        <div class="min-w-0 flex-1">
+          <div class="font-medium truncate flex items-center gap-2 max-w-[200px]" title="${ev.title}">
             ${ev.title}
             ${ev.sourceUrl ? `<a href="${ev.sourceUrl}" target="_blank" class="text-brand-600 hover:text-brand-700 flex-shrink-0" title="開啟活動連結"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>` : ''}
           </div>
@@ -212,8 +212,44 @@
           <button class="text-brand-600 hover:underline" data-edit="${ev.id}">編輯</button>
         </div>
       </div>`;
+    
+    // Open details on click (ignore if clicked on the edit button or sourceUrl link)
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('button[data-edit]') || e.target.closest('a')) return;
+      openEventDetails(ev, `${cardChips}${pmChips}`, countdownHtml);
+    });
+
     card.querySelector('[data-edit]').addEventListener('click', () => openEventModal(ev));
     return card;
+  }
+
+  function openEventDetails(ev, tagsHtml, countdownHtml) {
+    document.getElementById('eventDetailsTitle').textContent = ev.title;
+    
+    let reward = '';
+    if (ev.cashbackPercent) reward = ev.cashbackPercent + '%';
+    else if (ev.cashbackFixed) reward = '+' + A.fmtNumber(ev.cashbackFixed);
+    else reward = '無';
+
+    document.getElementById('eventDetailsContent').innerHTML = `
+      <div class="text-sm text-slate-600">
+        <div class="mb-2"><strong>活動期間：</strong> ${A.fmtDateOnly(ev.startDate)} ~ ${A.fmtDateOnly(ev.endDate)}</div>
+        <div class="mb-2"><strong>狀態 / 倒數：</strong> ${countdownHtml}</div>
+        <div class="mb-2"><strong>回饋比例：</strong> <span class="text-brand-600 font-semibold">${reward}</span></div>
+        <div class="mb-2"><strong>最低門檻：</strong> ${ev.minimumSpend != null ? A.fmtNumber(ev.minimumSpend) : '—'}</div>
+        <div class="mb-2"><strong>回饋上限：</strong> ${ev.maxReward != null ? A.fmtNumber(ev.maxReward) : '—'}</div>
+        <div class="mb-2"><strong>適用卡片/支付：</strong> <div class="mt-1 flex flex-wrap gap-1">${tagsHtml}</div></div>
+        ${ev.description ? `<div class="mb-2"><strong>活動說明：</strong><p class="mt-1 whitespace-pre-wrap">${ev.description}</p></div>` : ''}
+        ${ev.sourceUrl ? `<div class="mb-2"><strong>參考連結：</strong> <a href="${ev.sourceUrl}" target="_blank" class="text-brand-600 hover:underline break-all">${ev.sourceUrl}</a></div>` : ''}
+      </div>
+    `;
+    
+    const editBtn = document.getElementById('eventDetailsEditBtn');
+    editBtn.onclick = () => {
+      A.closeModal('eventDetailsModal');
+      openEventModal(ev);
+    };
+    A.openModal('eventDetailsModal');
   }
 
   function chipButton(box, item, selectedSet) {
@@ -284,6 +320,7 @@
     if (state.cardId) params.set('cardId', state.cardId);
     if (state.pmId) params.set('paymentMethodId', state.pmId);
     try {
+      listEl.innerHTML = '<div class="text-sm text-slate-400 col-span-full">載入中…</div>';
       const events = await A.jsonFetch(A.api('/cashback?' + params.toString()));
       listEl.innerHTML = '';
       if (!events.length) {

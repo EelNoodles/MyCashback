@@ -192,6 +192,24 @@
     </div>
   </div>
 
+  <!-- Modal: Event Details -->
+  <div id="eventDetailsModal" class="hidden fixed inset-0 z-40 bg-black/40 grid place-items-center px-3">
+    <div class="bg-white w-full max-w-md rounded-2xl shadow-xl p-5 animate-slide-up max-h-[90vh] flex flex-col">
+      <div class="flex justify-between items-start mb-4">
+        <h3 class="text-lg font-semibold truncate" id="eventDetailsTitle">活動詳情</h3>
+        <button data-dismiss="eventDetailsModal" class="text-slate-400 hover:text-slate-600">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+      <div class="overflow-y-auto flex-1 space-y-4" id="eventDetailsContent">
+        <!-- Content injected via JS -->
+      </div>
+      <div class="mt-5 pt-4 border-t flex justify-end gap-2 shrink-0">
+        <button id="eventDetailsEditBtn" type="button" class="px-4 py-2 text-sm rounded-lg bg-brand-600 text-white hover:bg-brand-700">前往編輯</button>
+      </div>
+    </div>
+  </div>
+
   <%- include('partials/footer') %>
   <script src="<%= asset('/js/cashback.js') %>"></script>
 </body>
