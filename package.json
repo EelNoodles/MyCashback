@@ -1,0 +1,52 @@
+{
+  "name": "mycashback",
+  "version": "1.0.0",
+  "description": "Points & Cashback Hub - A monolithic Node.js + Express application for managing points and cashback events",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "concurrently \"npm:watch:css\" \"nodemon server.js\"",
+    "build:css": "tailwindcss -i ./public/css/tailwind.css -o ./public/css/styles.css --minify",
+    "watch:css": "tailwindcss -i ./public/css/tailwind.css -o ./public/css/styles.css --watch",
+    "build:icons": "node scripts/generate-icons.js",
+    "build": "npm run build:icons && npm run build:css",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop ecosystem.config.js",
+    "pm2:reload": "pm2 reload ecosystem.config.js",
+    "db:migrate": "node scripts/migrate.js"
+  },
+  "keywords": [
+    "points",
+    "cashback",
+    "express",
+    "firebase",
+    "sequelize"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^16.4.5",
+    "ejs": "^3.1.10",
+    "express": "^4.21.2",
+    "express-session": "^1.18.1",
+    "firebase-admin": "^13.0.2",
+    "morgan": "^1.10.0",
+    "multer": "^1.4.5-lts.1",
+    "mysql2": "^3.11.5",
+    "sequelize": "^6.37.5",
+    "winston": "^3.17.0",
+    "winston-daily-rotate-file": "^5.0.0"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.1.0",
+    "nodemon": "^3.1.9",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

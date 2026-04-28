@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <%- include('partials/head', { title: title }) %>
+</head>
+<body class="min-h-screen bg-slate-50 text-slate-800">
+  <%- include('partials/nav', { active: active }) %>
+
+  <main class="max-w-6xl mx-auto px-4 py-6 space-y-6">
+    <header class="flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-semibold">點數總覽</h1>
+        <p class="text-sm text-slate-500">所有點數/載具的目前餘額</p>
+      </div>
+      <div class="flex gap-2">
+        <a href="<%= url('/points') %>" class="px-3 py-2 text-sm rounded-lg bg-brand-600 text-white hover:bg-brand-700">管理點數</a>
+      </div>
+    </header>
+
+    <!-- Summary stat cards -->
+    <section class="grid grid-cols-2 md:grid-cols-4 gap-3" id="summaryStats">
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
+        <div class="text-xs text-slate-500">點數種類</div>
+        <div class="text-2xl font-semibold mt-1" data-stat="count">—</div>
+      </div>
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
+        <div class="text-xs text-slate-500">本月新增</div>
+        <div class="text-2xl font-semibold mt-1 text-emerald-600" data-stat="earned">—</div>
+      </div>
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
+        <div class="text-xs text-slate-500">本月花費</div>
+        <div class="text-2xl font-semibold mt-1 text-rose-600" data-stat="spent">—</div>
+      </div>
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
+        <div class="text-xs text-slate-500">有效活動</div>
+        <div class="text-2xl font-semibold mt-1 text-brand-600" data-stat="activeEvents">—</div>
+      </div>
+    </section>
+
+    <!-- Points cards grid -->
+    <section>
+      <h2 class="text-lg font-semibold mb-3">點數卡片</h2>
+      <div id="pointsGrid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+        <div class="text-sm text-slate-400 col-span-full" data-loading>載入中…</div>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold mb-3">即將到期的回饋活動</h2>
+      <div id="expiringEvents" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div class="text-sm text-slate-400 col-span-full" data-loading>載入中…</div>
+      </div>
+    </section>
+  </main>
+
+  <%- include('partials/footer') %>
+  <script src="<%= asset('/js/dashboard.js') %>"></script>
+</body>
+</html>

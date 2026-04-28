@@ -1,0 +1,33 @@
+'use strict';
+
+/**
+ * Card = 銀行帳戶 / 信用卡 / 金融卡 (debit) / 帳戶
+ * - kind 區分類型，UI 可分組顯示
+ */
+module.exports = (sequelize, DataTypes) => {
+  const Card = sequelize.define('Card', {
+    id: { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
+    userId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+    name: {
+      type: DataTypes.STRING(120),
+      allowNull: false,
+      comment: '卡片/帳戶名稱，例如「玉山 Pi 卡」、「台新 Richart」'
+    },
+    kind: {
+      type: DataTypes.ENUM('credit', 'debit', 'bank', 'other'),
+      allowNull: false,
+      defaultValue: 'credit'
+    },
+    issuer: { type: DataTypes.STRING(120), allowNull: true, comment: '發卡銀行' },
+    color: { type: DataTypes.STRING(20), allowNull: true },
+    note: { type: DataTypes.STRING(500), allowNull: true }
+  }, {
+    tableName: 'cards',
+    indexes: [
+      { fields: ['userId'] },
+      { unique: true, fields: ['userId', 'name'], name: 'cards_user_name_unique' }
+    ]
+  });
+
+  return Card;
+};

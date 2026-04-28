@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <%- include('partials/head', { title: title || '登入' }) %>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-brand-50 via-white to-brand-100">
+  <main class="min-h-screen grid place-items-center px-4">
+    <div class="w-full max-w-sm bg-white rounded-2xl shadow-xl border border-slate-100 p-6 animate-slide-up">
+      <div class="flex items-center justify-center mb-6">
+        <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-500 to-brand-700 text-white grid place-items-center text-xl font-bold shadow-lg">C$</div>
+      </div>
+      <h1 class="text-xl font-semibold text-center text-slate-800">Points &amp; Cashback Hub</h1>
+      <p class="text-center text-sm text-slate-500 mt-1">登入以管理你的點數與回饋活動</p>
+
+      <form id="loginForm" class="mt-6 space-y-3" autocomplete="on">
+        <label class="block">
+          <span class="text-xs text-slate-500">Email</span>
+          <input id="email" name="email" type="email" required autocomplete="email"
+                 class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent" />
+        </label>
+        <label class="block">
+          <span class="text-xs text-slate-500">密碼</span>
+          <input id="password" name="password" type="password" required minlength="6" autocomplete="current-password"
+                 class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent" />
+        </label>
+        <button id="loginBtn" type="submit"
+                class="w-full rounded-lg bg-brand-600 hover:bg-brand-700 disabled:bg-brand-300 text-white py-2.5 text-sm font-medium transition shadow">
+          <span data-state="idle">登入</span>
+          <span data-state="loading" class="hidden">登入中…</span>
+        </button>
+        <div id="loginError" class="hidden text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2"></div>
+      </form>
+
+      <div class="my-4 flex items-center gap-3 text-xs text-slate-400">
+        <span class="h-px flex-1 bg-slate-200"></span><span>或</span><span class="h-px flex-1 bg-slate-200"></span>
+      </div>
+
+      <button id="googleBtn"
+              class="w-full flex items-center justify-center gap-2 rounded-lg border border-slate-300 hover:bg-slate-50 text-sm py-2.5 transition">
+        <svg width="16" height="16" viewBox="0 0 48 48" aria-hidden="true">
+          <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.5-5.9 7.7-11.3 7.7c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.5 6 29.5 4 24 4C12.9 4 4 12.9 4 24s8.9 20 20 20s20-8.9 20-20c0-1.2-.1-2.4-.4-3.5z"/>
+          <path fill="#FF3D00" d="M6.3 14.1l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.5 6 29.5 4 24 4C16.3 4 9.7 8.3 6.3 14.1z"/>
+          <path fill="#4CAF50" d="M24 44c5.4 0 10.3-2 14-5.4l-6.5-5.3c-2 1.4-4.6 2.3-7.5 2.3c-5.3 0-9.8-3.4-11.4-8.1l-6.5 5C9.7 39.6 16.3 44 24 44z"/>
+          <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4-4 5.3l6.5 5.3C41 35.5 44 30.2 44 24c0-1.2-.1-2.4-.4-3.5z"/>
+        </svg>
+        使用 Google 登入
+      </button>
+
+      <p class="mt-4 text-center text-xs text-slate-400">
+        新使用者？輸入新的 Email/密碼 後將自動建立帳號。
+      </p>
+    </div>
+  </main>
+
+  <!-- Firebase Web SDK config injected from server -->
+  <script>
+    window.FIREBASE_CONFIG = <%- JSON.stringify(firebaseConfig) %>;
+  </script>
+  <script type="module" src="<%= asset('/js/login.js') %>"></script>
+</body>
+</html>

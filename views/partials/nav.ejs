@@ -1,0 +1,20 @@
+<nav class="bg-white border-b border-slate-200 sticky top-0 z-30 backdrop-blur supports-[backdrop-filter]:bg-white/80">
+  <div class="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
+    <a href="<%= url('/') %>" class="flex items-center gap-2 font-semibold text-brand-700">
+      <span class="w-8 h-8 rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 text-white grid place-items-center text-sm">C$</span>
+      <span class="hidden sm:inline">Cashback Hub</span>
+    </a>
+    <div class="flex items-center gap-1 text-sm">
+      <a href="<%= url('/') %>" class="px-3 py-2 rounded-lg <%= active === 'dashboard' ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-100' %>">總覽</a>
+      <a href="<%= url('/points') %>" class="px-3 py-2 rounded-lg <%= active === 'points' ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-100' %>">點數</a>
+      <a href="<%= url('/cashback') %>" class="px-3 py-2 rounded-lg <%= active === 'cashback' ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-100' %>">回饋</a>
+      <a href="<%= url('/tags') %>" class="px-3 py-2 rounded-lg <%= active === 'tags' ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-100' %>">卡片/支付</a>
+    </div>
+    <div class="flex items-center gap-2">
+      <% if (typeof currentUser !== 'undefined' && currentUser) { %>
+        <span class="hidden md:inline text-xs text-slate-500"><%= currentUser.email || currentUser.displayName %></span>
+      <% } %>
+      <button id="logoutBtn" class="px-3 py-1.5 text-sm rounded-lg border border-slate-300 hover:bg-slate-50">登出</button>
+    </div>
+  </div>
+</nav>

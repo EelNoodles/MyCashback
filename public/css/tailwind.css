@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    font-family: 'Inter', 'Noto Sans TC', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+  :focus-visible { outline: 2px solid theme('colors.brand.500'); outline-offset: 2px; }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm transition;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center justify-center px-3 py-2 rounded-lg border border-slate-300 hover:bg-slate-50 text-sm transition;
+  }
+  .card {
+    @apply bg-white rounded-2xl shadow-sm border border-slate-100;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-slate-100 text-slate-700;
+  }
+  .chip-active {
+    @apply bg-brand-100 text-brand-700;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+
+  /* Safe-area for installed PWA on iOS */
+  .pt-safe { padding-top: env(safe-area-inset-top); }
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+}
