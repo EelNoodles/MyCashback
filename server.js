@@ -61,6 +61,11 @@ router.use('/static', express.static(path.join(__dirname, 'public'), {
   maxAge: process.env.NODE_ENV === 'production' ? '7d' : 0
 }));
 
+// Uploaded images — imageUrl stored as "/uploads/xxx.png" so serve them at that path too
+router.use('/uploads', express.static(path.join(__dirname, 'public/uploads'), {
+  maxAge: process.env.NODE_ENV === 'production' ? '7d' : 0
+}));
+
 // Health check (no auth)
 router.get('/healthz', (req, res) => res.json({ ok: true, ts: Date.now() }));
 
