@@ -144,16 +144,17 @@
         for (const p of points) grid.appendChild(pointCardEl(p));
       }
 
-      // Expiring soon: endDate within 14 days
-      const today = new Date();
-      const soon = events
-        .filter((e) => e.endDate && (new Date(e.endDate) - today) <= 14 * 86400000)
-        .slice(0, 6);
+      // All active events sorted by cashback % (highest first)
+      const sorted = events.slice().sort((a, b) => {
+        const pA = Number(a.cashbackPercent) || 0;
+        const pB = Number(b.cashbackPercent) || 0;
+        return pB - pA;
+      });
       expiringBox.innerHTML = '';
-      if (!soon.length) {
-        expiringBox.innerHTML = `<div class="text-sm text-slate-400 col-span-full">沒有即將到期的活動</div>`;
+      if (!sorted.length) {
+        expiringBox.innerHTML = `<div class="text-sm text-slate-400 col-span-full">沒有進行中的活動</div>`;
       } else {
-        for (const ev of soon) expiringBox.appendChild(eventCardEl(ev));
+        for (const ev of sorted) expiringBox.appendChild(eventCardEl(ev));
       }
 
       // stats
