@@ -3,7 +3,7 @@
 const path = require('path');
 const fs = require('fs');
 const { Op } = require('sequelize');
-const { sequelize, Point, PointHistory } = require('../models');
+const { sequelize, Point, PointHistory, PointExpiry } = require('../models');
 const logger = require('../config/logger');
 
 function pickColorFromName(name) {
@@ -365,3 +365,96 @@ exports.deleteHistory = async (req, res, next) => {
     next(err);
   }
 };
+
+// ---------- Point Expiries ----------
+
+// GET /api/points/:id/expiries
+exports.listExpiries = async (req, res, next) => {
+  try {
+    const point = await Point.findOne({
+      where: { id: req.params.id, userId: req.user.id }
+    });
+    if (!point) return res.status(404).json({ error: 'NOT_FOUND' });
+
+    const expiries = await PointExpiry.findAll({
+      where: { pointId: point.id },
+      order: [['expiryDate', 'ASC']]
+    });
+    res.json(expiries);
+  } catch (err) { next(err); }
+};
+
+// POST /api/points/:id/expiries
+exports.addExpiry = async (req, res, next) => {
+  try {
+    const point = await Point.findOne({
+      where: { id: req.params.id, userId: req.user.id }
+    });
+    if (!point) return res.status(404).json({ error: 'NOT_FOUND' });
+
+    const { amount, expiryDate, note } = req.body;
+    if (!amount || !expiryDate) return res.status(400).json({ error: 'AMOUNT_AND_DATE_REQUIRED' });
+
+    const expiry = await PointExpiry.create({
+      pointId: point.id,
+      userId: req.user.id,
+      amount: Number(amount),
+      expiryDate,
+      note: note || null
+    });
+    res.status(201).json(expiry);
+  } catch (err) { next(err); }
+};
+
+// PUT /api/points/:id/expiries/:eid
+exports.updateExpiry = async (req, res, next) => {
+  try {
+    const point = await Point.findOne({
+      where: { id: req.params.id, userId: req.user.id }
+    });
+    if (!point) return res.status(404).json({ error: 'NOT_FOUND' });
+
+    const expiry = await PointExpiry.findOne({
+      where: { id: req.params.eid, pointId: point.id }
+    });
+    if (!expiry) return res.status(404).json({ error: 'EXPIRY_NOT_FOUND' });
+
+    const { amount, expiryDate, status, note } = req.body;
+    if (amount !== undefined) expiry.amount = Number(amount);
+    if (expiryDate !== undefined) expiry.expiryDate = expiryDate;
+    if (status && ['active', 'dismissed'].includes(status)) expiry.status = status;
+    if (note !== undefined) expiry.note = note || null;
+    await expiry.save();
+    res.json(expiry);
+  } catch (err) { next(err); }
+};
+
+// DELETE /api/points/:id/expiries/:eid
+exports.deleteExpiry = async (req, res, next) => {
+  try {
+    const point = await Point.findOne({
+      where: { id: req.params.id, userId: req.user.id }
+    });
+    if (!point) return res.status(404).json({ error: 'NOT_FOUND' });
+
+    const expiry = await PointExpiry.findOne({
+      where: { id: req.params.eid, pointId: point.id }
+    });
+    if (!expiry) return res.status(404).json({ error: 'EXPIRY_NOT_FOUND' });
+    await expiry.destroy();
+    res.json({ ok: true });
+  } catch (err) { next(err); }
+};
+
+// GET /api/expiries/alerts — dashboard: all active expiry alerts for this user
+exports.listAlerts = async (req, res, next) => {
+  try {
+    const alerts = await PointExpiry.findAll({
+      where: { userId: req.user.id, status: 'active' },
+      include: [{ model: Point, as: 'point', attributes: ['id', 'name', 'issuer', 'imageUrl', 'color'] }],
+      order: [['expiryDate', 'ASC']]
+    });
+    res.json(alerts);
+  } catch (err) { next(err); }
+};
+

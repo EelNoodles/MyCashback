@@ -11,6 +11,8 @@ const Card = require('./Card')(sequelize, DataTypes);
 const PaymentMethod = require('./PaymentMethod')(sequelize, DataTypes);
 const EventCard = require('./EventCard')(sequelize, DataTypes);
 const EventPaymentMethod = require('./EventPaymentMethod')(sequelize, DataTypes);
+const PointExpiry = require('./PointExpiry')(sequelize, DataTypes);
+const FcmToken = require('./FcmToken')(sequelize, DataTypes);
 
 // ---------- Associations ----------
 
@@ -30,6 +32,18 @@ PaymentMethod.belongsTo(User, { foreignKey: 'userId' });
 // Point 1 -> N PointHistory
 Point.hasMany(PointHistory, { foreignKey: 'pointId', as: 'histories', onDelete: 'CASCADE' });
 PointHistory.belongsTo(Point, { foreignKey: 'pointId', as: 'point' });
+
+// Point 1 -> N PointExpiry
+Point.hasMany(PointExpiry, { foreignKey: 'pointId', as: 'expiries', onDelete: 'CASCADE' });
+PointExpiry.belongsTo(Point, { foreignKey: 'pointId', as: 'point' });
+
+// User 1 -> N PointExpiry
+User.hasMany(PointExpiry, { foreignKey: 'userId', onDelete: 'CASCADE' });
+PointExpiry.belongsTo(User, { foreignKey: 'userId' });
+
+// User 1 -> N FcmToken
+User.hasMany(FcmToken, { foreignKey: 'userId', onDelete: 'CASCADE' });
+FcmToken.belongsTo(User, { foreignKey: 'userId' });
 
 // CashbackEvent <-> Card (M:N) via EventCard
 CashbackEvent.belongsToMany(Card, {
@@ -65,9 +79,11 @@ module.exports = {
   User,
   Point,
   PointHistory,
+  PointExpiry,
   CashbackEvent,
   Card,
   PaymentMethod,
   EventCard,
-  EventPaymentMethod
+  EventPaymentMethod,
+  FcmToken
 };

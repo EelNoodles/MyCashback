@@ -116,7 +116,7 @@
     return result;
   }
 
-  const CYCLE_LABELS = { weekly: '每週', biweekly: '雙週', monthly: '每月' };
+  const CYCLE_LABELS = { weekly: '本週', biweekly: '本雙週', monthly: '本月' };
   const DAY_LABELS = ['', '一', '二', '三', '四', '五', '六', '日'];
 
   // ─── Renderers ───
@@ -193,7 +193,10 @@
     card.innerHTML = `
       <div class="flex items-start justify-between gap-3">
         <div class="min-w-0">
-          <div class="font-medium truncate">${ev.title}</div>
+          <div class="font-medium truncate flex items-center gap-2">
+            ${ev.title}
+            ${ev.sourceUrl ? `<a href="${ev.sourceUrl}" target="_blank" class="text-brand-600 hover:text-brand-700 flex-shrink-0" title="開啟活動連結"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>` : ''}
+          </div>
           <div class="text-xs text-slate-500 mt-0.5">${A.fmtDateOnly(ev.startDate)} ~ ${A.fmtDateOnly(ev.endDate)}</div>
         </div>
         <div class="text-right flex-shrink-0">

@@ -20,6 +20,8 @@ const pointRoutes = require('./routes/points');
 const cashbackRoutes = require('./routes/cashback');
 const tagRoutes = require('./routes/tags');
 const aiRoutes = require('./routes/ai');
+const fcmRoutes = require('./routes/fcm');
+const pointCtrl = require('./controllers/pointController');
 
 const app = express();
 
@@ -97,6 +99,8 @@ router.use('/api/points', pointRoutes);
 router.use('/api/cashback', cashbackRoutes);
 router.use('/api/tags', tagRoutes);
 router.use('/api/ai', aiRoutes);
+router.use('/api/fcm', fcmRoutes);
+router.get('/api/expiries/alerts', pointCtrl.listAlerts);
 
 // Mount router with optional BASE_URL prefix
 if (BASE_URL) {
@@ -151,6 +155,14 @@ async function boot() {
 
     app.listen(PORT, () => {
       logger.info(`Server listening on port ${PORT} (BASE_URL="${BASE_URL || '/'}")`);
+
+      // Start notification cron after server is up
+      try {
+        const { startExpiryNotificationCron } = require('./services/notificationCron');
+        startExpiryNotificationCron();
+      } catch (err) {
+        logger.warn('Failed to start notification cron', { err: err.message });
+      }
     });
   } catch (err) {
     logger.error('Failed to boot', { err: err.stack || err.message });

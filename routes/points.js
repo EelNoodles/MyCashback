@@ -39,4 +39,9 @@ router.post('/:id/histories', ctrl.addHistory);
 router.put('/:id/histories/:hid', ctrl.updateHistory);
 router.delete('/:id/histories/:hid', ctrl.deleteHistory);
 
+router.get('/:id/expiries', ctrl.listExpiries);
+router.post('/:id/expiries', ctrl.addExpiry);
+router.put('/:id/expiries/:eid', ctrl.updateExpiry);
+router.delete('/:id/expiries/:eid', ctrl.deleteExpiry);
+
 module.exports = router;

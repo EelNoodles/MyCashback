@@ -135,7 +135,58 @@
       navigator.serviceWorker
         .register(url('/service-worker.js'), { scope: url('/') })
         .catch((err) => console.warn('SW register failed', err));
+
+      // Firebase Messaging SW
+      navigator.serviceWorker
+        .register(url('/firebase-messaging-sw.js'), { scope: url('/') })
+        .then((reg) => {
+          // Pass Firebase config to the messaging SW
+          const cfg = window.FIREBASE_CONFIG;
+          if (cfg && cfg.apiKey && reg.active) {
+            reg.active.postMessage({ type: 'FIREBASE_CONFIG', config: cfg });
+          }
+        })
+        .catch((err) => console.warn('FCM SW register failed', err));
     });
+  }
+
+  // FCM push notification setup
+  async function initFcmPush() {
+    const cfg = window.FIREBASE_CONFIG;
+    if (!cfg || !cfg.apiKey) return;
+    if (!('Notification' in window)) return;
+
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') return;
+
+      // Dynamically import Firebase ESM modules
+      const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js');
+      const { getMessaging, getToken } = await import('https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging.js');
+
+      const app = initializeApp(cfg);
+      const messaging = getMessaging(app);
+
+      const vapidKey = cfg.vapidKey || undefined;
+      const token = await getToken(messaging, {
+        vapidKey,
+        serviceWorkerRegistration: await navigator.serviceWorker.getRegistration(url('/'))
+      });
+
+      if (token) {
+        await jsonFetch(api('/fcm/token'), {
+          method: 'POST',
+          body: { token, deviceInfo: navigator.userAgent.slice(0, 200) }
+        }).catch(() => {});
+      }
+    } catch (err) {
+      console.warn('FCM init failed', err);
+    }
+  }
+
+  // Auto-init FCM on authenticated pages
+  if (window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.apiKey && document.getElementById('logoutBtn')) {
+    setTimeout(initFcmPush, 2000); // delay to not block page load
   }
 
   // Expose helpers
@@ -144,6 +195,7 @@
     fmtNumber, fmtDate, fmtDateOnly,
     gradientFromName, initialsFrom,
     openModal, closeModal,
-    setLoading, showError
+    setLoading, showError,
+    initFcmPush
   };
 })();

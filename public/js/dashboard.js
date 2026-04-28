@@ -4,12 +4,14 @@
 
   const grid = document.getElementById('pointsGrid');
   const expiringBox = document.getElementById('expiringEvents');
+  const alertSection = document.getElementById('expiryAlertSection');
+  const alertsBox = document.getElementById('expiryAlerts');
 
   const NETWORK_LABELS = {
     visa: 'VISA', mastercard: 'MC', jcb: 'JCB',
     amex: 'AMEX', unionpay: 'UP', other: ''
   };
-  const CYCLE_LABELS = { weekly: '每週', biweekly: '雙週', monthly: '每月' };
+  const CYCLE_LABELS = { weekly: '本週', biweekly: '本雙週', monthly: '本月' };
 
   function getNextResetDate(today, cycleType, anchorDay) {
     const d = new Date(today);
@@ -73,7 +75,6 @@
     card.className = 'card p-3';
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const todayStr = today.toISOString().slice(0, 10);
     const daysLeft = ev.endDate ? Math.ceil((new Date(ev.endDate) - today) / 86400000) : null;
 
     // Event remaining
@@ -88,7 +89,7 @@
       }
     }
 
-    // Cycle remaining
+    // Cycle remaining — 本月/本週
     let cycleHtml = '';
     if (ev.cycleType && ev.cycleType !== 'none') {
       const nextReset = getNextResetDate(today, ev.cycleType, ev.cycleAnchorDay);
@@ -117,7 +118,10 @@
     card.innerHTML = `
       <div class="flex items-start justify-between gap-3">
         <div class="min-w-0">
-          <div class="font-medium truncate">${ev.title}</div>
+          <div class="font-medium truncate flex items-center gap-2">
+            ${ev.title}
+            ${ev.sourceUrl ? `<a href="${ev.sourceUrl}" target="_blank" class="text-brand-600 hover:text-brand-700 flex-shrink-0" title="開啟活動連結"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>` : ''}
+          </div>
           <div class="text-xs text-slate-500 mt-0.5">${A.fmtDateOnly(ev.startDate)} ~ ${A.fmtDateOnly(ev.endDate)}</div>
           <div class="mt-2 flex flex-wrap gap-1">${tags}</div>
         </div>
@@ -130,12 +134,75 @@
     return card;
   }
 
+  // ─── Expiry Alert Card ───
+  function expiryAlertEl(alert) {
+    const card = document.createElement('div');
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const daysLeft = Math.ceil((new Date(alert.expiryDate) - today) / 86400000);
+
+    let urgencyClass = 'border-amber-200 bg-amber-50';
+    let urgencyText = 'text-amber-700';
+    let urgencyLabel = `${daysLeft} 天後到期`;
+    if (daysLeft <= 0) {
+      urgencyClass = 'border-rose-200 bg-rose-50';
+      urgencyText = 'text-rose-700';
+      urgencyLabel = daysLeft === 0 ? '今天到期！' : '已過期';
+    } else if (daysLeft <= 3) {
+      urgencyClass = 'border-rose-200 bg-rose-50';
+      urgencyText = 'text-rose-600';
+      urgencyLabel = `⚠️ ${daysLeft} 天後到期`;
+    }
+
+    const pointName = alert.point ? alert.point.name : '—';
+
+    card.className = `rounded-xl border p-3 ${urgencyClass} flex items-center justify-between gap-3 transition`;
+    card.innerHTML = `
+      <div class="min-w-0">
+        <div class="font-medium text-sm truncate ${urgencyText}">${pointName}</div>
+        <div class="text-xs text-slate-600 mt-0.5">
+          <strong>${A.fmtNumber(alert.amount)}</strong> 點 · ${alert.expiryDate}
+        </div>
+        <div class="text-[10px] ${urgencyText} font-medium mt-0.5">${urgencyLabel}</div>
+        ${alert.note ? `<div class="text-[10px] text-slate-400 truncate mt-0.5">${alert.note}</div>` : ''}
+      </div>
+      <div class="flex gap-1 flex-shrink-0">
+        <button data-dismiss-alert="${alert.id}" data-point="${alert.pointId}"
+                class="text-[10px] px-2 py-1 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                title="已使用 / 警報解除">✓ 已用</button>
+      </div>`;
+
+    card.querySelector('[data-dismiss-alert]').addEventListener('click', async (e) => {
+      const eid = e.currentTarget.dataset.dismissAlert;
+      const pid = e.currentTarget.dataset.point;
+      try {
+        await A.jsonFetch(A.api(`/points/${pid}/expiries/${eid}`), {
+          method: 'PUT', body: { status: 'dismissed' }
+        });
+        card.remove();
+        // Hide section if no more alerts
+        if (!alertsBox.children.length) alertSection.classList.add('hidden');
+      } catch (err) {
+        console.error('dismiss alert failed', err);
+      }
+    });
+    return card;
+  }
+
   async function load() {
     try {
-      const [points, events] = await Promise.all([
+      const [points, events, alerts] = await Promise.all([
         A.jsonFetch(A.api('/points')),
-        A.jsonFetch(A.api('/cashback?status=active'))
+        A.jsonFetch(A.api('/cashback?status=active')),
+        A.jsonFetch(A.api('/expiries/alerts'))
       ]);
+
+      // Expiry alerts
+      if (alerts.length) {
+        alertSection.classList.remove('hidden');
+        alertsBox.innerHTML = '';
+        for (const a of alerts) alertsBox.appendChild(expiryAlertEl(a));
+      }
 
       grid.innerHTML = '';
       if (!points.length) {
@@ -162,7 +229,7 @@
       stats.querySelector('[data-stat="count"]').textContent = points.length;
       stats.querySelector('[data-stat="activeEvents"]').textContent = events.length;
 
-      // Earned/spent this month — derive by querying histories of every point in parallel
+      // Earned/spent this month
       const monthKey = new Date().toISOString().slice(0, 7);
       let earned = 0; let spent = 0;
       const allHistories = await Promise.all(

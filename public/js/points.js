@@ -26,6 +26,14 @@
 
   let state = { points: [], currentPointId: null };
 
+  // Expiry elements
+  const addExpiryBtn = document.getElementById('addExpiryBtn');
+  const expiryForm = document.getElementById('expiryForm');
+  const expiryFormError = document.getElementById('expiryFormError');
+  const expiryModalTitle = document.getElementById('expiryModalTitle');
+  const tlExpiries = document.getElementById('tlExpiries');
+  const tlExpiryList = document.getElementById('tlExpiryList');
+
   function pointCardEl(p) {
     const card = document.createElement('button');
     card.type = 'button';
@@ -133,9 +141,12 @@
       timelineEl.innerHTML = '';
       if (!data.histories.length) {
         timelineEl.innerHTML = `<li class="text-sm text-slate-400">尚無歷史紀錄</li>`;
-        return;
+      } else {
+        for (const h of data.histories) timelineEl.appendChild(timelineRowEl(h));
       }
-      for (const h of data.histories) timelineEl.appendChild(timelineRowEl(h));
+
+      // Load expiries
+      await loadExpiries(pointId);
     } catch (err) {
       timelineEl.innerHTML = `<li class="text-sm text-rose-500">載入失敗：${err.message}</li>`;
     }
@@ -284,6 +295,111 @@
       await openTimeline(state.currentPointId);
     } catch (err) {
       A.showError(historyFormError, err.message);
+    }
+  });
+
+  // ---------- Point Expiries ----------
+
+  function expiryRowEl(exp) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const daysLeft = Math.ceil((new Date(exp.expiryDate) - today) / 86400000);
+    const isDismissed = exp.status === 'dismissed';
+
+    let urgency = 'text-amber-600';
+    let label = `${daysLeft} 天後到期`;
+    if (daysLeft <= 0) { urgency = 'text-rose-600'; label = daysLeft === 0 ? '今天到期！' : '已過期'; }
+    else if (daysLeft <= 3) { urgency = 'text-rose-500'; label = `⚠️ ${daysLeft} 天`; }
+
+    const row = document.createElement('div');
+    row.className = `flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs ${isDismissed ? 'bg-slate-50 opacity-60' : 'bg-amber-50 border border-amber-100'}`;
+    row.innerHTML = `
+      <div class="min-w-0">
+        <span class="font-semibold">${A.fmtNumber(exp.amount)}</span> 點 · 
+        <span>${exp.expiryDate}</span>
+        ${!isDismissed ? `<span class="${urgency} font-medium ml-1">${label}</span>` : '<span class="text-slate-400 ml-1">已解除</span>'}
+        ${exp.note ? `<span class="text-slate-400 ml-1">(${exp.note})</span>` : ''}
+      </div>
+      <div class="flex gap-1 flex-shrink-0">
+        ${isDismissed
+          ? `<button data-restore="${exp.id}" class="px-2 py-0.5 rounded bg-brand-100 text-brand-700 hover:bg-brand-200">復原</button>`
+          : `<button data-dismiss="${exp.id}" class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 hover:bg-emerald-200">✓ 已用</button>`
+        }
+        <button data-delete="${exp.id}" class="px-2 py-0.5 rounded bg-rose-100 text-rose-700 hover:bg-rose-200">刪除</button>
+      </div>`;
+
+    const pid = state.currentPointId;
+
+    // Dismiss
+    row.querySelector('[data-dismiss]')?.addEventListener('click', async () => {
+      await A.jsonFetch(A.api(`/points/${pid}/expiries/${exp.id}`), { method: 'PUT', body: { status: 'dismissed' } });
+      await loadExpiries(pid);
+    });
+
+    // Restore
+    row.querySelector('[data-restore]')?.addEventListener('click', async () => {
+      await A.jsonFetch(A.api(`/points/${pid}/expiries/${exp.id}`), { method: 'PUT', body: { status: 'active' } });
+      await loadExpiries(pid);
+    });
+
+    // Delete
+    row.querySelector('[data-delete]').addEventListener('click', async () => {
+      if (!confirm('確定刪除此到期設定？')) return;
+      await A.jsonFetch(A.api(`/points/${pid}/expiries/${exp.id}`), { method: 'DELETE' });
+      await loadExpiries(pid);
+    });
+
+    return row;
+  }
+
+  async function loadExpiries(pointId) {
+    try {
+      const expiries = await A.jsonFetch(A.api(`/points/${pointId}/expiries`));
+      if (expiries.length) {
+        tlExpiries.classList.remove('hidden');
+        tlExpiryList.innerHTML = '';
+        for (const e of expiries) tlExpiryList.appendChild(expiryRowEl(e));
+      } else {
+        tlExpiries.classList.add('hidden');
+      }
+    } catch (err) {
+      console.error('loadExpiries', err);
+    }
+  }
+
+  addExpiryBtn?.addEventListener('click', () => {
+    if (!state.currentPointId) return;
+    expiryForm.reset();
+    expiryForm.eid.value = '';
+    expiryModalTitle.textContent = '新增到期提醒';
+    A.showError(expiryFormError, '');
+    A.openModal('expiryModal');
+  });
+
+  expiryForm?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const submitBtn = expiryForm.querySelector('button[type=submit]');
+    A.setLoading(submitBtn, true);
+    A.showError(expiryFormError, '');
+    try {
+      const data = {
+        amount: expiryForm.amount.value,
+        expiryDate: expiryForm.expiryDate.value,
+        note: expiryForm.note.value || null
+      };
+      const eid = expiryForm.eid.value;
+      const pid = state.currentPointId;
+      if (eid) {
+        await A.jsonFetch(A.api(`/points/${pid}/expiries/${eid}`), { method: 'PUT', body: data });
+      } else {
+        await A.jsonFetch(A.api(`/points/${pid}/expiries`), { method: 'POST', body: data });
+      }
+      A.closeModal('expiryModal');
+      await loadExpiries(pid);
+    } catch (err) {
+      A.showError(expiryFormError, err.message);
+    } finally {
+      A.setLoading(submitBtn, false);
     }
   });
 

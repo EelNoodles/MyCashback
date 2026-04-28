@@ -3,6 +3,16 @@
 const express = require('express');
 const router = express.Router();
 
+// Inject Firebase config on all authenticated pages (for FCM push)
+router.use((req, res, next) => {
+  res.locals.firebaseConfig = {
+    apiKey: process.env.FIREBASE_API_KEY || '',
+    authDomain: process.env.FIREBASE_AUTH_DOMAIN || '',
+    projectId: process.env.FIREBASE_PROJECT_ID || '',
+    appId: process.env.FIREBASE_APP_ID || ''
+  };
+  next();
+});
 router.get('/', (req, res) => {
   res.render('dashboard', { title: '儀表板 - Points & Cashback Hub', active: 'dashboard' });
 });

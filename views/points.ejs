@@ -32,6 +32,7 @@
         </div>
         <div class="flex gap-2 flex-shrink-0">
           <button id="addHistoryBtn" class="px-3 py-1.5 text-xs rounded-lg bg-brand-600 text-white hover:bg-brand-700">+ 紀錄</button>
+          <button id="addExpiryBtn" class="px-3 py-1.5 text-xs rounded-lg bg-amber-500 text-white hover:bg-amber-600">⏰ 到期提醒</button>
           <button id="closeTimelineBtn" class="px-3 py-1.5 text-xs rounded-lg border border-slate-300">關閉</button>
         </div>
       </div>
@@ -49,6 +50,12 @@
           <div class="text-[10px] uppercase text-slate-400">本月淨變動</div>
           <div class="text-base font-semibold" data-tlstat="net">—</div>
         </div>
+      </div>
+
+      <!-- Expiry alerts for this point -->
+      <div id="tlExpiries" class="hidden px-4 py-3 border-b border-slate-100 space-y-2">
+        <div class="text-xs font-medium text-amber-600">⏰ 到期提醒</div>
+        <div id="tlExpiryList" class="space-y-2"></div>
       </div>
 
       <ol id="timeline" class="relative px-4 py-3 space-y-3 max-h-[60vh] overflow-y-auto">
@@ -129,6 +136,39 @@
           <button type="button" data-dismiss="historyModal" class="px-3 py-2 text-sm rounded-lg border border-slate-300">取消</button>
           <button id="deleteHistoryBtn" type="button" class="hidden px-3 py-2 text-sm rounded-lg border border-rose-300 text-rose-600">刪除</button>
           <button type="submit" class="px-3 py-2 text-sm rounded-lg bg-brand-600 text-white hover:bg-brand-700">
+            <span data-state="idle">儲存</span><span data-state="loading" class="hidden">儲存中…</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Expiry form -->
+  <div id="expiryModal" class="hidden fixed inset-0 z-40 bg-black/40 grid place-items-center px-3">
+    <div class="bg-white w-full max-w-md rounded-2xl shadow-xl p-5 animate-slide-up">
+      <h3 class="text-lg font-semibold" id="expiryModalTitle">新增到期提醒</h3>
+      <form id="expiryForm" class="mt-3 space-y-3">
+        <input type="hidden" name="eid" />
+        <div class="grid grid-cols-2 gap-3">
+          <label class="block">
+            <span class="text-xs text-slate-500">到期點數 <span class="text-rose-500">*</span></span>
+            <input name="amount" type="number" min="0" step="0.01" required
+                   class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          </label>
+          <label class="block">
+            <span class="text-xs text-slate-500">到期日期 <span class="text-rose-500">*</span></span>
+            <input name="expiryDate" type="date" required
+                   class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          </label>
+        </div>
+        <label class="block">
+          <span class="text-xs text-slate-500">備註</span>
+          <input name="note" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        </label>
+        <div id="expiryFormError" class="hidden text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2"></div>
+        <div class="flex justify-end gap-2 pt-1">
+          <button type="button" data-dismiss="expiryModal" class="px-3 py-2 text-sm rounded-lg border border-slate-300">取消</button>
+          <button type="submit" class="px-3 py-2 text-sm rounded-lg bg-amber-500 text-white hover:bg-amber-600">
             <span data-state="idle">儲存</span><span data-state="loading" class="hidden">儲存中…</span>
           </button>
         </div>

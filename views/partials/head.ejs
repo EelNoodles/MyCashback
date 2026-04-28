@@ -25,4 +25,7 @@
   window.APP_CONFIG = {
     baseUrl: <%- JSON.stringify(baseUrl || '') %>
   };
+  <% if (typeof firebaseConfig !== 'undefined' && firebaseConfig) { %>
+  window.FIREBASE_CONFIG = <%- JSON.stringify(firebaseConfig) %>;
+  <% } %>
 </script>
