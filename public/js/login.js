@@ -7,9 +7,7 @@ import {
   setPersistence,
   browserLocalPersistence,
   signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  GoogleAuthProvider,
-  signInWithPopup
+  createUserWithEmailAndPassword
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 
 const baseUrl = (window.APP_CONFIG && window.APP_CONFIG.baseUrl) || '';
@@ -18,7 +16,6 @@ const cfg = window.FIREBASE_CONFIG || {};
 const errBox = document.getElementById('loginError');
 const form = document.getElementById('loginForm');
 const submitBtn = document.getElementById('loginBtn');
-const googleBtn = document.getElementById('googleBtn');
 
 function setLoading(loading) {
   if (!submitBtn) return;
@@ -42,7 +39,6 @@ function readableAuthError(err) {
     case 'auth/invalid-credential': return '帳號或密碼錯誤';
     case 'auth/weak-password': return '密碼過於簡單，請至少 6 碼';
     case 'auth/email-already-in-use': return '此 Email 已註冊，請改用登入';
-    case 'auth/popup-closed-by-user': return '已取消 Google 登入';
     default: return (err && err.message) || '登入失敗';
   }
 }
@@ -105,17 +101,5 @@ form?.addEventListener('submit', async (e) => {
     showError(readableAuthError(err));
   } finally {
     setLoading(false);
-  }
-});
-
-googleBtn?.addEventListener('click', async () => {
-  if (!auth) { showError('Firebase 未設定'); return; }
-  showError('');
-  try {
-    const provider = new GoogleAuthProvider();
-    const cred = await signInWithPopup(auth, provider);
-    await exchangeForSession(cred.user);
-  } catch (err) {
-    showError(readableAuthError(err));
   }
 });

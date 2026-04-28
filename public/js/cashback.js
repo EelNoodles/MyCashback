@@ -18,6 +18,9 @@
   const eventModalTitle = document.getElementById('eventModalTitle');
   const cardChipsBox = document.getElementById('cardChips');
   const pmChipsBox = document.getElementById('pmChips');
+  const cycleAnchorWrap = document.getElementById('cycleAnchorWrap');
+  const cycleAnchorLabel = document.getElementById('cycleAnchorLabel');
+  const cycleHint = document.getElementById('cycleHint');
 
   // AI
   const aiInput = document.getElementById('aiInput');
@@ -42,23 +45,150 @@
     let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
   }
 
-  // ----- Renderers -----
+  const NETWORK_LABELS = {
+    visa: 'VISA', mastercard: 'MC', jcb: 'JCB',
+    amex: 'AMEX', unionpay: 'UP', other: ''
+  };
+
+  // ─── Cycle Calculation ───
+  function getNextResetDate(today, cycleType, anchorDay) {
+    const d = new Date(today);
+    if (cycleType === 'monthly') {
+      const anchor = Math.min(anchorDay || 1, 28);
+      let nextReset = new Date(d.getFullYear(), d.getMonth(), anchor);
+      if (nextReset <= d) {
+        nextReset = new Date(d.getFullYear(), d.getMonth() + 1, anchor);
+      }
+      return nextReset;
+    }
+    if (cycleType === 'weekly' || cycleType === 'biweekly') {
+      const anchor = (anchorDay || 1); // 1=Mon
+      const currentDay = d.getDay() || 7; // Sunday=7
+      let daysUntil = anchor - currentDay;
+      if (daysUntil <= 0) daysUntil += 7;
+      if (cycleType === 'biweekly' && daysUntil <= 7) daysUntil += 7; // rough approx
+      const next = new Date(d);
+      next.setDate(next.getDate() + daysUntil);
+      return next;
+    }
+    return null;
+  }
+
+  function calcCycleInfo(ev) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayStr = today.toISOString().slice(0, 10);
+    const result = { expired: false, eventRemaining: null, cycleRemaining: null };
+
+    if (ev.endDate && ev.endDate < todayStr) {
+      result.expired = true;
+      return result;
+    }
+
+    // Total event remaining
+    if (ev.endDate) {
+      const endMs = new Date(ev.endDate) - today;
+      const totalDays = Math.ceil(endMs / 86400000);
+      const months = Math.floor(totalDays / 30);
+      const days = totalDays % 30;
+      result.eventRemaining = { months, days, totalDays };
+    }
+
+    // Cycle remaining
+    if (ev.cycleType && ev.cycleType !== 'none') {
+      const nextReset = getNextResetDate(today, ev.cycleType, ev.cycleAnchorDay);
+      if (nextReset) {
+        const cycleDays = Math.ceil((nextReset - today) / 86400000);
+
+        // Compute cycle length for progress
+        let cycleLength = 30;
+        if (ev.cycleType === 'weekly') cycleLength = 7;
+        else if (ev.cycleType === 'biweekly') cycleLength = 14;
+        else if (ev.cycleType === 'monthly') cycleLength = 30;
+
+        const elapsed = cycleLength - cycleDays;
+        const progress = Math.max(0, Math.min(100, (elapsed / cycleLength) * 100));
+
+        result.cycleRemaining = { days: cycleDays, cycleLength, progress };
+      }
+    }
+
+    return result;
+  }
+
+  const CYCLE_LABELS = { weekly: '每週', biweekly: '雙週', monthly: '每月' };
+  const DAY_LABELS = ['', '一', '二', '三', '四', '五', '六', '日'];
+
+  // ─── Renderers ───
   function eventCardEl(ev) {
     const card = document.createElement('div');
     card.className = 'card p-4';
-    const today = new Date().toISOString().slice(0, 10);
-    const isExpired = ev.endDate && ev.endDate < today;
-    const daysLeft = ev.endDate ? Math.ceil((new Date(ev.endDate) - new Date(today)) / 86400000) : null;
-    const left = isExpired ? '已結束'
-      : (daysLeft === null ? '無期限'
-        : daysLeft === 0 ? '今天最後一天' : `剩 ${daysLeft} 天`);
+    const info = calcCycleInfo(ev);
 
     const reward = ev.cashbackPercent
       ? `${ev.cashbackPercent}% 回饋`
       : (ev.cashbackFixed ? `+${A.fmtNumber(ev.cashbackFixed)}` : '—');
 
-    const cardChips = (ev.cards || []).map((c) => `<span class="chip">💳 ${c.name}</span>`).join('');
-    const pmChips = (ev.paymentMethods || []).map((p) => `<span class="chip">💸 ${p.name}</span>`).join('');
+    // Card chips with mini-card styling
+    const cardChips = (ev.cards || []).map((c) => {
+      const net = c.network ? ` · ${NETWORK_LABELS[c.network] || ''}` : '';
+      if (c.imageUrl) {
+        return `<span class="credit-card-mini"><img class="credit-card-mini__img" src="${A.url(c.imageUrl)}" alt="" />${c.name}${net}</span>`;
+      }
+      return `<span class="credit-card-mini">💳 ${c.name}${net}</span>`;
+    }).join('');
+
+    const pmChips = (ev.paymentMethods || []).map((p) => {
+      if (p.imageUrl) {
+        return `<span class="pm-badge"><img class="pm-badge__img" src="${A.url(p.imageUrl)}" alt="" />${p.name}</span>`;
+      }
+      return `<span class="pm-badge">💸 ${p.name}</span>`;
+    }).join('');
+
+    // Build countdown display
+    let countdownHtml = '';
+    if (info.expired) {
+      countdownHtml = '<div class="text-xs text-rose-500 font-medium">已結束</div>';
+    } else {
+      // Event remaining
+      let eventLeft = '';
+      if (info.eventRemaining) {
+        const { months, days, totalDays } = info.eventRemaining;
+        if (totalDays <= 0) {
+          eventLeft = '今天最後一天';
+        } else if (months > 0) {
+          eventLeft = `活動剩 ${months} 月 ${days} 天`;
+        } else {
+          eventLeft = `活動剩 ${days} 天`;
+        }
+
+        // Event progress
+        if (ev.startDate && ev.endDate) {
+          const startMs = new Date(ev.startDate).getTime();
+          const endMs = new Date(ev.endDate).getTime();
+          const nowMs = new Date().getTime();
+          const totalMs = endMs - startMs;
+          const elapsedMs = nowMs - startMs;
+          const pct = totalMs > 0 ? Math.max(0, Math.min(100, (elapsedMs / totalMs) * 100)) : 0;
+          const barColor = pct > 80 ? 'progress-bar__fill--rose' : (pct > 50 ? 'progress-bar__fill--amber' : 'progress-bar__fill--brand');
+          eventLeft += `<div class="flex items-center gap-2 mt-1"><div class="progress-bar"><div class="${barColor} progress-bar__fill" style="width:${pct.toFixed(1)}%"></div></div><span class="text-[9px] text-slate-400">${Math.round(pct)}%</span></div>`;
+        }
+      } else {
+        eventLeft = '無期限';
+      }
+
+      // Cycle remaining
+      let cycleLeft = '';
+      if (info.cycleRemaining) {
+        const label = CYCLE_LABELS[ev.cycleType] || '';
+        const cDays = info.cycleRemaining.days;
+        const pct = info.cycleRemaining.progress;
+        cycleLeft = `<div class="text-[10px] text-slate-500 mt-1">${label}剩 <strong class="text-slate-700">${cDays}</strong> 天</div>`;
+        cycleLeft += `<div class="flex items-center gap-2 mt-0.5"><div class="progress-bar"><div class="progress-bar__fill progress-bar__fill--brand" style="width:${pct.toFixed(1)}%"></div></div></div>`;
+      }
+
+      countdownHtml = `<div class="text-[10px] text-slate-500">${eventLeft}</div>${cycleLeft}`;
+    }
 
     card.innerHTML = `
       <div class="flex items-start justify-between gap-3">
@@ -68,9 +198,9 @@
         </div>
         <div class="text-right flex-shrink-0">
           <div class="text-base font-semibold text-brand-600">${reward}</div>
-          <div class="text-[10px] ${isExpired ? 'text-rose-500' : 'text-slate-400'} mt-1">${left}</div>
         </div>
       </div>
+      <div class="mt-2">${countdownHtml}</div>
       <div class="mt-3 flex flex-wrap gap-1">${cardChips}${pmChips}</div>
       <div class="mt-3 grid grid-cols-3 gap-2 text-xs text-slate-500">
         <div><span class="text-slate-400">最低門檻：</span>${ev.minimumSpend != null ? A.fmtNumber(ev.minimumSpend) : '—'}</div>
@@ -102,7 +232,29 @@
     return btn;
   }
 
-  // ----- Loaders -----
+  // ─── Cycle form UX ───
+  function updateCycleUI() {
+    const type = eventForm.cycleType.value;
+    if (type === 'none') {
+      cycleAnchorWrap.style.display = 'none';
+      cycleHint.textContent = '設定後活動將依週期顯示倒數';
+    } else if (type === 'weekly' || type === 'biweekly') {
+      cycleAnchorWrap.style.display = '';
+      cycleAnchorLabel.textContent = '星期幾重置 (1=一 ~ 7=日)';
+      eventForm.cycleAnchorDay.max = 7;
+      eventForm.cycleAnchorDay.placeholder = '例: 1';
+      cycleHint.textContent = type === 'weekly' ? '每週重置，將顯示本週剩餘天數' : '每兩週重置';
+    } else if (type === 'monthly') {
+      cycleAnchorWrap.style.display = '';
+      cycleAnchorLabel.textContent = '每月幾號重置';
+      eventForm.cycleAnchorDay.max = 31;
+      eventForm.cycleAnchorDay.placeholder = '例: 1';
+      cycleHint.textContent = '每月重置，將顯示本月剩餘天數';
+    }
+  }
+  eventForm?.cycleType?.addEventListener('change', updateCycleUI);
+
+  // ─── Loaders ───
   async function loadTags() {
     try {
       const [cards, pms] = await Promise.all([
@@ -141,7 +293,7 @@
     }
   }
 
-  // ----- Filter wiring -----
+  // ─── Filter wiring ───
   qInput.addEventListener('input', debounce(() => {
     state.q = qInput.value.trim();
     loadEvents();
@@ -159,7 +311,7 @@
     });
   });
 
-  // ----- Event modal -----
+  // ─── Event modal ───
   function openEventModal(ev) {
     eventForm.reset();
     A.showError(eventFormError, '');
@@ -172,6 +324,8 @@
       eventForm.title.value = ev.title || '';
       eventForm.startDate.value = ev.startDate || '';
       eventForm.endDate.value = ev.endDate || '';
+      eventForm.cycleType.value = ev.cycleType || 'none';
+      eventForm.cycleAnchorDay.value = ev.cycleAnchorDay ?? '';
       eventForm.cashbackPercent.value = ev.cashbackPercent ?? '';
       eventForm.cashbackFixed.value = ev.cashbackFixed ?? '';
       eventForm.rewardType.value = ev.rewardType || 'cash';
@@ -187,6 +341,8 @@
       eventForm.id.value = '';
       deleteEventBtn.classList.add('hidden');
     }
+
+    updateCycleUI();
 
     cardChipsBox.innerHTML = '';
     pmChipsBox.innerHTML = '';
@@ -214,6 +370,8 @@
         title: eventForm.title.value,
         startDate: eventForm.startDate.value || null,
         endDate: eventForm.endDate.value || null,
+        cycleType: eventForm.cycleType.value || 'none',
+        cycleAnchorDay: eventForm.cycleAnchorDay.value || null,
         cashbackPercent: eventForm.cashbackPercent.value || null,
         cashbackFixed: eventForm.cashbackFixed.value || null,
         rewardType: eventForm.rewardType.value,
@@ -252,7 +410,7 @@
     }
   });
 
-  // ----- AI -----
+  // ─── AI ───
   aiParseBtn?.addEventListener('click', () => {
     aiInput.value = '';
     aiPreview.classList.add('hidden');

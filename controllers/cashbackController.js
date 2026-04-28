@@ -138,10 +138,14 @@ function parsePayload(body) {
     maxReward,
     minimumSpend,
     sourceUrl,
+    cycleType,
+    cycleAnchorDay,
     note,
     cardIds,
     paymentMethodIds
   } = body;
+
+  const validCycleTypes = ['none', 'weekly', 'biweekly', 'monthly'];
 
   const data = {
     title: (title || '').trim(),
@@ -162,6 +166,10 @@ function parsePayload(body) {
       ? null
       : Number(minimumSpend),
     sourceUrl: sourceUrl || null,
+    cycleType: validCycleTypes.includes(cycleType) ? cycleType : 'none',
+    cycleAnchorDay: cycleAnchorDay === '' || cycleAnchorDay === null || cycleAnchorDay === undefined
+      ? null
+      : parseInt(cycleAnchorDay, 10) || null,
     note: note || null
   };
 

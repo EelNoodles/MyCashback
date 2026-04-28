@@ -79,6 +79,28 @@
           </label>
         </div>
 
+        <!-- Cycle settings -->
+        <div class="bg-slate-50 rounded-xl p-3 space-y-2 border border-slate-200">
+          <div class="text-xs font-medium text-slate-600">🔄 週期設定</div>
+          <div class="grid grid-cols-2 gap-3">
+            <label class="block">
+              <span class="text-xs text-slate-500">週期類型</span>
+              <select name="cycleType" class="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">
+                <option value="none">無週期</option>
+                <option value="weekly">每週</option>
+                <option value="biweekly">雙週</option>
+                <option value="monthly">每月</option>
+              </select>
+            </label>
+            <label class="block" id="cycleAnchorWrap">
+              <span class="text-xs text-slate-500" id="cycleAnchorLabel">錨點日期</span>
+              <input name="cycleAnchorDay" type="number" min="1" max="31" placeholder="例: 1"
+                     class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+            </label>
+          </div>
+          <div class="text-[10px] text-slate-400" id="cycleHint">設定後活動將依週期顯示倒數</div>
+        </div>
+
         <div class="grid grid-cols-2 gap-3">
           <label class="block">
             <span class="text-xs text-slate-500">回饋 %</span>

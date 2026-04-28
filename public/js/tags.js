@@ -11,6 +11,7 @@
   const cardFormError = document.getElementById('cardFormError');
   const cardModalTitle = document.getElementById('cardModalTitle');
   const deleteCardBtn = document.getElementById('deleteCardBtn');
+  const cardPreview = document.getElementById('cardPreview');
 
   const pmForm = document.getElementById('pmForm');
   const pmFormError = document.getElementById('pmFormError');
@@ -18,35 +19,78 @@
   const deletePmBtn = document.getElementById('deletePmBtn');
 
   const KIND_LABELS = { credit: '信用卡', debit: '金融卡', bank: '銀行', other: '其他' };
+  const NETWORK_LABELS = {
+    visa: 'VISA', mastercard: 'Mastercard', jcb: 'JCB',
+    amex: 'AMEX', unionpay: '銀聯', other: ''
+  };
 
-  function rowEl(item, type) {
-    const li = document.createElement('li');
-    li.className = 'py-3 flex items-center justify-between gap-3';
-    const left = document.createElement('div');
-    left.className = 'flex items-center gap-3 min-w-0';
-    const dot = document.createElement('div');
-    dot.className = 'w-9 h-9 rounded-xl text-white grid place-items-center text-sm font-semibold flex-shrink-0';
-    dot.style.background = A.gradientFromName(item.name);
-    dot.textContent = A.initialsFrom(item.name);
-    const text = document.createElement('div');
-    text.className = 'min-w-0';
-    text.innerHTML = `
-      <div class="text-sm font-medium truncate">${item.name}</div>
-      <div class="text-xs text-slate-400 truncate">
-        ${type === 'card' ? (KIND_LABELS[item.kind] || item.kind) + (item.issuer ? ` · ${item.issuer}` : '') : (item.note || '')}
+  // ─── Credit Card Renderer ───
+  function renderCreditCard(item, opts = {}) {
+    const { clickable = true, size = 'full' } = opts;
+    const wrap = document.createElement('div');
+    wrap.className = `credit-card credit-card--${item.kind || 'credit'}`;
+    if (size === 'mini') {
+      wrap.style.maxWidth = '180px';
+      wrap.style.fontSize = '0.6rem';
+    }
+
+    let bgHtml = '';
+    if (item.imageUrl) {
+      bgHtml = `<img class="credit-card__bg" src="${A.url(item.imageUrl)}" alt="" />`;
+    }
+
+    const lastFourDisplay = item.lastFour
+      ? `•••• •••• •••• ${item.lastFour}`
+      : '•••• •••• •••• ••••';
+
+    const networkLabel = item.network ? (NETWORK_LABELS[item.network] || '') : '';
+
+    wrap.innerHTML = `
+      ${bgHtml}
+      <div class="credit-card__content">
+        <div class="credit-card__header">
+          <div>
+            <div style="opacity:0.7;font-size:0.55rem">${KIND_LABELS[item.kind] || ''}</div>
+            <div>${item.issuer || ''}</div>
+          </div>
+          <div class="credit-card__chip"></div>
+        </div>
+        <div class="credit-card__number">${lastFourDisplay}</div>
+        <div class="credit-card__footer">
+          <div class="credit-card__name">${item.name}</div>
+          <div class="credit-card__network">${networkLabel}</div>
+        </div>
       </div>`;
-    left.append(dot, text);
 
-    const actions = document.createElement('div');
-    actions.className = 'flex gap-2 flex-shrink-0';
-    const editBtn = document.createElement('button');
-    editBtn.className = 'text-xs text-brand-600 hover:underline';
-    editBtn.textContent = '編輯';
-    editBtn.addEventListener('click', () => type === 'card' ? openCardModal(item) : openPmModal(item));
-    actions.appendChild(editBtn);
+    if (clickable) {
+      wrap.addEventListener('click', () => openCardModal(item));
+    }
+    return wrap;
+  }
 
-    li.append(left, actions);
-    return li;
+  // ─── Payment Method Renderer ───
+  function renderPmCard(item) {
+    const wrap = document.createElement('div');
+    wrap.className = 'flex flex-col items-center gap-2 p-3 rounded-xl bg-white border border-slate-100 shadow-sm hover:shadow-md transition cursor-pointer';
+
+    const iconWrap = document.createElement('div');
+    iconWrap.className = 'w-14 h-14 rounded-xl overflow-hidden flex-shrink-0';
+
+    if (item.imageUrl) {
+      iconWrap.innerHTML = `<img src="${A.url(item.imageUrl)}" alt="${item.name}" class="w-full h-full object-contain" />`;
+    } else {
+      iconWrap.style.background = A.gradientFromName(item.name);
+      iconWrap.className += ' grid place-items-center text-white text-lg font-bold';
+      iconWrap.textContent = A.initialsFrom(item.name);
+    }
+
+    const label = document.createElement('div');
+    label.className = 'text-xs font-medium text-center truncate w-full';
+    label.textContent = item.name;
+
+    wrap.append(iconWrap, label);
+    wrap.addEventListener('click', () => openPmModal(item));
+    return wrap;
   }
 
   async function loadCards() {
@@ -54,29 +98,52 @@
       const data = await A.jsonFetch(A.api('/tags/cards'));
       cardListEl.innerHTML = '';
       if (!data.length) {
-        cardListEl.innerHTML = `<li class="py-3 text-sm text-slate-400">尚未新增任何卡片</li>`;
+        cardListEl.innerHTML = `<div class="text-sm text-slate-400 col-span-full">尚未新增任何卡片</div>`;
         return;
       }
-      for (const c of data) cardListEl.appendChild(rowEl(c, 'card'));
+      for (const c of data) cardListEl.appendChild(renderCreditCard(c));
     } catch (err) {
-      cardListEl.innerHTML = `<li class="py-3 text-sm text-rose-500">載入失敗：${err.message}</li>`;
+      cardListEl.innerHTML = `<div class="text-sm text-rose-500 col-span-full">載入失敗：${err.message}</div>`;
     }
   }
+
   async function loadPms() {
     try {
       const data = await A.jsonFetch(A.api('/tags/payment-methods'));
       pmListEl.innerHTML = '';
       if (!data.length) {
-        pmListEl.innerHTML = `<li class="py-3 text-sm text-slate-400">尚未新增任何支付方式</li>`;
+        pmListEl.innerHTML = `<div class="text-sm text-slate-400 col-span-full">尚未新增任何支付方式</div>`;
         return;
       }
-      for (const p of data) pmListEl.appendChild(rowEl(p, 'pm'));
+      for (const p of data) pmListEl.appendChild(renderPmCard(p));
     } catch (err) {
-      pmListEl.innerHTML = `<li class="py-3 text-sm text-rose-500">載入失敗：${err.message}</li>`;
+      pmListEl.innerHTML = `<div class="text-sm text-rose-500 col-span-full">載入失敗：${err.message}</div>`;
     }
   }
 
-  // ----- Card modal -----
+  // ─── Live Card Preview ───
+  function updateCardPreview() {
+    if (!cardPreview) return;
+    const item = {
+      name: cardForm.name.value || '卡片名稱',
+      kind: cardForm.kind.value || 'credit',
+      issuer: cardForm.issuer.value || '',
+      lastFour: cardForm.lastFour.value || '',
+      network: cardForm.network.value || '',
+      imageUrl: null  // no preview for file upload
+    };
+    cardPreview.innerHTML = '';
+    cardPreview.appendChild(renderCreditCard(item, { clickable: false }));
+  }
+
+  // Listen to form changes to update preview
+  ['name', 'kind', 'issuer', 'lastFour', 'network'].forEach(n => {
+    const el = cardForm?.[n];
+    if (el) el.addEventListener('input', updateCardPreview);
+    if (el) el.addEventListener('change', updateCardPreview);
+  });
+
+  // ─── Card modal ───
   function openCardModal(c) {
     cardForm.reset();
     A.showError(cardFormError, '');
@@ -86,6 +153,8 @@
       cardForm.name.value = c.name;
       cardForm.kind.value = c.kind || 'credit';
       cardForm.issuer.value = c.issuer || '';
+      cardForm.lastFour.value = c.lastFour || '';
+      cardForm.network.value = c.network || '';
       cardForm.note.value = c.note || '';
       deleteCardBtn.classList.remove('hidden');
     } else {
@@ -93,6 +162,7 @@
       cardForm.id.value = '';
       deleteCardBtn.classList.add('hidden');
     }
+    updateCardPreview();
     A.openModal('cardModal');
   }
   newCardBtn?.addEventListener('click', () => openCardModal(null));
@@ -103,15 +173,17 @@
     A.setLoading(submitBtn, true);
     A.showError(cardFormError, '');
     try {
-      const id = cardForm.id.value;
-      const data = {
-        name: cardForm.name.value,
-        kind: cardForm.kind.value,
-        issuer: cardForm.issuer.value,
-        note: cardForm.note.value
-      };
-      if (id) await A.jsonFetch(A.api(`/tags/cards/${id}`), { method: 'PUT', body: data });
-      else await A.jsonFetch(A.api('/tags/cards'), { method: 'POST', body: data });
+      const fd = new FormData(cardForm);
+      const id = fd.get('id');
+      // strip empty file input
+      if (fd.get('image') && !(fd.get('image').size > 0)) fd.delete('image');
+      if (id) {
+        fd.delete('id');
+        await A.jsonFetch(A.api(`/tags/cards/${id}`), { method: 'PUT', body: fd });
+      } else {
+        fd.delete('id');
+        await A.jsonFetch(A.api('/tags/cards'), { method: 'POST', body: fd });
+      }
       A.closeModal('cardModal');
       await loadCards();
     } catch (err) {
@@ -120,6 +192,7 @@
       A.setLoading(submitBtn, false);
     }
   });
+
   deleteCardBtn?.addEventListener('click', async () => {
     const id = cardForm.id.value;
     if (!id) return;
@@ -133,7 +206,7 @@
     }
   });
 
-  // ----- PM modal -----
+  // ─── PM modal ───
   function openPmModal(p) {
     pmForm.reset();
     A.showError(pmFormError, '');
@@ -158,10 +231,16 @@
     A.setLoading(submitBtn, true);
     A.showError(pmFormError, '');
     try {
-      const id = pmForm.id.value;
-      const data = { name: pmForm.name.value, note: pmForm.note.value };
-      if (id) await A.jsonFetch(A.api(`/tags/payment-methods/${id}`), { method: 'PUT', body: data });
-      else await A.jsonFetch(A.api('/tags/payment-methods'), { method: 'POST', body: data });
+      const fd = new FormData(pmForm);
+      const id = fd.get('id');
+      if (fd.get('image') && !(fd.get('image').size > 0)) fd.delete('image');
+      if (id) {
+        fd.delete('id');
+        await A.jsonFetch(A.api(`/tags/payment-methods/${id}`), { method: 'PUT', body: fd });
+      } else {
+        fd.delete('id');
+        await A.jsonFetch(A.api('/tags/payment-methods'), { method: 'POST', body: fd });
+      }
       A.closeModal('pmModal');
       await loadPms();
     } catch (err) {
@@ -170,6 +249,7 @@
       A.setLoading(submitBtn, false);
     }
   });
+
   deletePmBtn?.addEventListener('click', async () => {
     const id = pmForm.id.value;
     if (!id) return;

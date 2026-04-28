@@ -8,6 +8,11 @@ module.exports = (sequelize, DataTypes) => {
     id: { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
     userId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
     name: { type: DataTypes.STRING(120), allowNull: false },
+    imageUrl: {
+      type: DataTypes.STRING(500),
+      allowNull: true,
+      comment: '使用者上傳的支付方式圖片路徑'
+    },
     color: { type: DataTypes.STRING(20), allowNull: true },
     note: { type: DataTypes.STRING(500), allowNull: true }
   }, {

@@ -12,36 +12,43 @@
       <p class="text-sm text-slate-500">管理回饋活動可綁定的標籤</p>
     </header>
 
-    <section class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <section class="grid grid-cols-1 md:grid-cols-2 gap-6">
       <!-- Cards -->
-      <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
-        <div class="flex items-center justify-between mb-3">
-          <h2 class="font-semibold">信用卡 / 銀行 / 金融卡</h2>
-          <button id="newCardBtn" class="text-xs px-2 py-1 rounded-lg bg-brand-600 text-white hover:bg-brand-700">+ 新增</button>
+      <div>
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="font-semibold text-lg">信用卡 / 銀行 / 金融卡</h2>
+          <button id="newCardBtn" class="text-xs px-3 py-1.5 rounded-lg bg-brand-600 text-white hover:bg-brand-700">+ 新增</button>
         </div>
-        <ul id="cardList" class="divide-y divide-slate-100">
-          <li class="py-3 text-sm text-slate-400" data-loading>載入中…</li>
-        </ul>
+        <div id="cardList" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="text-sm text-slate-400" data-loading>載入中…</div>
+        </div>
       </div>
 
       <!-- Payment methods -->
-      <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
-        <div class="flex items-center justify-between mb-3">
-          <h2 class="font-semibold">支付方式</h2>
-          <button id="newPmBtn" class="text-xs px-2 py-1 rounded-lg bg-brand-600 text-white hover:bg-brand-700">+ 新增</button>
+      <div>
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="font-semibold text-lg">支付方式</h2>
+          <button id="newPmBtn" class="text-xs px-3 py-1.5 rounded-lg bg-brand-600 text-white hover:bg-brand-700">+ 新增</button>
         </div>
-        <ul id="pmList" class="divide-y divide-slate-100">
-          <li class="py-3 text-sm text-slate-400" data-loading>載入中…</li>
-        </ul>
+        <div id="pmList" class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <div class="text-sm text-slate-400" data-loading>載入中…</div>
+        </div>
       </div>
     </section>
   </main>
 
   <!-- Card modal -->
-  <div id="cardModal" class="hidden fixed inset-0 z-40 bg-black/40 grid place-items-center px-3">
-    <div class="bg-white w-full max-w-md rounded-2xl shadow-xl p-5 animate-slide-up">
-      <h3 class="text-lg font-semibold" id="cardModalTitle">新增卡片</h3>
-      <form id="cardForm" class="mt-3 space-y-3">
+  <div id="cardModal" class="hidden fixed inset-0 z-40 bg-black/40 grid place-items-center px-3 overflow-y-auto py-6">
+    <div class="bg-white w-full max-w-lg rounded-2xl shadow-xl p-5 animate-slide-up">
+      <div class="flex items-center justify-between">
+        <h3 class="text-lg font-semibold" id="cardModalTitle">新增卡片</h3>
+        <button type="button" data-dismiss="cardModal" class="text-slate-400 hover:text-slate-600">✕</button>
+      </div>
+
+      <!-- Live preview -->
+      <div id="cardPreview" class="mt-3 mx-auto w-full max-w-[320px]"></div>
+
+      <form id="cardForm" class="mt-4 space-y-3" enctype="multipart/form-data">
         <input type="hidden" name="id" />
         <label class="block">
           <span class="text-xs text-slate-500">名稱 <span class="text-rose-500">*</span></span>
@@ -62,6 +69,28 @@
             <input name="issuer" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
           </label>
         </div>
+        <div class="grid grid-cols-2 gap-3">
+          <label class="block">
+            <span class="text-xs text-slate-500">卡號末四碼</span>
+            <input name="lastFour" maxlength="4" pattern="[0-9]{0,4}" placeholder="1234" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          </label>
+          <label class="block">
+            <span class="text-xs text-slate-500">卡片組織</span>
+            <select name="network" class="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">
+              <option value="">未指定</option>
+              <option value="visa">VISA</option>
+              <option value="mastercard">Mastercard</option>
+              <option value="jcb">JCB</option>
+              <option value="amex">AMEX</option>
+              <option value="unionpay">銀聯</option>
+              <option value="other">其他</option>
+            </select>
+          </label>
+        </div>
+        <label class="block">
+          <span class="text-xs text-slate-500">卡面圖片 (選填，無則使用漸層)</span>
+          <input name="image" type="file" accept="image/*" class="mt-1 block text-sm" />
+        </label>
         <label class="block">
           <span class="text-xs text-slate-500">備註</span>
           <input name="note" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
@@ -81,12 +110,19 @@
   <!-- Payment method modal -->
   <div id="pmModal" class="hidden fixed inset-0 z-40 bg-black/40 grid place-items-center px-3">
     <div class="bg-white w-full max-w-md rounded-2xl shadow-xl p-5 animate-slide-up">
-      <h3 class="text-lg font-semibold" id="pmModalTitle">新增支付方式</h3>
-      <form id="pmForm" class="mt-3 space-y-3">
+      <div class="flex items-center justify-between">
+        <h3 class="text-lg font-semibold" id="pmModalTitle">新增支付方式</h3>
+        <button type="button" data-dismiss="pmModal" class="text-slate-400 hover:text-slate-600">✕</button>
+      </div>
+      <form id="pmForm" class="mt-3 space-y-3" enctype="multipart/form-data">
         <input type="hidden" name="id" />
         <label class="block">
           <span class="text-xs text-slate-500">名稱 <span class="text-rose-500">*</span></span>
           <input name="name" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        </label>
+        <label class="block">
+          <span class="text-xs text-slate-500">圖片 (選填)</span>
+          <input name="image" type="file" accept="image/*" class="mt-1 block text-sm" />
         </label>
         <label class="block">
           <span class="text-xs text-slate-500">備註</span>

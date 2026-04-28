@@ -19,6 +19,18 @@ module.exports = (sequelize, DataTypes) => {
       defaultValue: 'credit'
     },
     issuer: { type: DataTypes.STRING(120), allowNull: true, comment: '發卡銀行' },
+    lastFour: { type: DataTypes.STRING(4), allowNull: true, comment: '卡號末四碼' },
+    network: {
+      type: DataTypes.ENUM('visa', 'mastercard', 'jcb', 'amex', 'unionpay', 'other'),
+      allowNull: true,
+      defaultValue: null,
+      comment: '發卡組織'
+    },
+    imageUrl: {
+      type: DataTypes.STRING(500),
+      allowNull: true,
+      comment: '使用者上傳的卡片圖片路徑'
+    },
     color: { type: DataTypes.STRING(20), allowNull: true },
     note: { type: DataTypes.STRING(500), allowNull: true }
   }, {

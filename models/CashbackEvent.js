@@ -36,6 +36,17 @@ module.exports = (sequelize, DataTypes) => {
       comment: '回饋門檻 (例如單筆滿 200)'
     },
     sourceUrl: { type: DataTypes.STRING(1000), allowNull: true },
+    cycleType: {
+      type: DataTypes.ENUM('none', 'weekly', 'biweekly', 'monthly'),
+      allowNull: false,
+      defaultValue: 'none',
+      comment: '週期類型：none=無週期, weekly=每週, biweekly=雙週, monthly=每月'
+    },
+    cycleAnchorDay: {
+      type: DataTypes.TINYINT.UNSIGNED,
+      allowNull: true,
+      comment: 'weekly: 1=Mon~7=Sun, monthly: 1~31 (每月幾號重置)'
+    },
     note: { type: DataTypes.TEXT, allowNull: true }
   }, {
     tableName: 'cashback_events',

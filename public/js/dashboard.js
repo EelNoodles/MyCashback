@@ -5,6 +5,33 @@
   const grid = document.getElementById('pointsGrid');
   const expiringBox = document.getElementById('expiringEvents');
 
+  const NETWORK_LABELS = {
+    visa: 'VISA', mastercard: 'MC', jcb: 'JCB',
+    amex: 'AMEX', unionpay: 'UP', other: ''
+  };
+  const CYCLE_LABELS = { weekly: '每週', biweekly: '雙週', monthly: '每月' };
+
+  function getNextResetDate(today, cycleType, anchorDay) {
+    const d = new Date(today);
+    if (cycleType === 'monthly') {
+      const anchor = Math.min(anchorDay || 1, 28);
+      let nextReset = new Date(d.getFullYear(), d.getMonth(), anchor);
+      if (nextReset <= d) nextReset = new Date(d.getFullYear(), d.getMonth() + 1, anchor);
+      return nextReset;
+    }
+    if (cycleType === 'weekly' || cycleType === 'biweekly') {
+      const anchor = (anchorDay || 1);
+      const currentDay = d.getDay() || 7;
+      let daysUntil = anchor - currentDay;
+      if (daysUntil <= 0) daysUntil += 7;
+      if (cycleType === 'biweekly' && daysUntil <= 7) daysUntil += 7;
+      const next = new Date(d);
+      next.setDate(next.getDate() + daysUntil);
+      return next;
+    }
+    return null;
+  }
+
   function pointCardEl(p) {
     const wrap = document.createElement('a');
     wrap.href = A.url('/points');
@@ -44,16 +71,48 @@
   function eventCardEl(ev) {
     const card = document.createElement('div');
     card.className = 'card p-3';
-    const today = new Date().toISOString().slice(0, 10);
-    const daysLeft = ev.endDate ? Math.ceil((new Date(ev.endDate) - new Date(today)) / 86400000) : null;
-    const left = daysLeft === null ? '無期限'
-      : daysLeft < 0 ? '已結束'
-      : daysLeft === 0 ? '今天最後一天' : `剩 ${daysLeft} 天`;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayStr = today.toISOString().slice(0, 10);
+    const daysLeft = ev.endDate ? Math.ceil((new Date(ev.endDate) - today) / 86400000) : null;
 
-    const tags = []
-      .concat((ev.cards || []).map((c) => `<span class="chip">${c.name}</span>`))
-      .concat((ev.paymentMethods || []).map((p) => `<span class="chip">${p.name}</span>`))
-      .join(' ');
+    // Event remaining
+    let eventLeftStr = '無期限';
+    if (daysLeft !== null) {
+      if (daysLeft < 0) eventLeftStr = '已結束';
+      else if (daysLeft === 0) eventLeftStr = '今天最後一天';
+      else {
+        const m = Math.floor(daysLeft / 30);
+        const d = daysLeft % 30;
+        eventLeftStr = m > 0 ? `活動剩 ${m} 月 ${d} 天` : `活動剩 ${d} 天`;
+      }
+    }
+
+    // Cycle remaining
+    let cycleHtml = '';
+    if (ev.cycleType && ev.cycleType !== 'none') {
+      const nextReset = getNextResetDate(today, ev.cycleType, ev.cycleAnchorDay);
+      if (nextReset) {
+        const cDays = Math.ceil((nextReset - today) / 86400000);
+        const label = CYCLE_LABELS[ev.cycleType] || '';
+        cycleHtml = `<div class="text-[10px] text-slate-500 mt-0.5">${label}剩 <strong>${cDays}</strong> 天</div>`;
+      }
+    }
+
+    // Card/PM chips with image support
+    const cardChips = (ev.cards || []).map((c) => {
+      if (c.imageUrl) {
+        return `<span class="credit-card-mini"><img class="credit-card-mini__img" src="${A.url(c.imageUrl)}" alt="" />${c.name}</span>`;
+      }
+      return `<span class="credit-card-mini">💳 ${c.name}</span>`;
+    });
+    const pmChips = (ev.paymentMethods || []).map((p) => {
+      if (p.imageUrl) {
+        return `<span class="pm-badge" style="font-size:0.6rem;padding:2px 6px"><img class="pm-badge__img" style="width:16px;height:16px" src="${A.url(p.imageUrl)}" alt="" />${p.name}</span>`;
+      }
+      return `<span class="chip">${p.name}</span>`;
+    });
+    const tags = cardChips.concat(pmChips).join(' ');
 
     card.innerHTML = `
       <div class="flex items-start justify-between gap-3">
@@ -64,7 +123,8 @@
         </div>
         <div class="text-right">
           <div class="text-sm font-semibold text-brand-600">${ev.cashbackPercent ? ev.cashbackPercent + '%' : (ev.cashbackFixed ? '+' + A.fmtNumber(ev.cashbackFixed) : '')}</div>
-          <div class="text-[10px] text-slate-400 mt-1">${left}</div>
+          <div class="text-[10px] text-slate-400 mt-1">${eventLeftStr}</div>
+          ${cycleHtml}
         </div>
       </div>`;
     return card;
