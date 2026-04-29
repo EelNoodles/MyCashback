@@ -18,8 +18,8 @@ self.addEventListener('message', (event) => {
       if (title) {
         self.registration.showNotification(title, {
           body: body || '',
-          icon: '/static/icons/icon-192.png',
-          badge: '/static/icons/icon-192.png',
+          icon: './icons/icon-192.png',
+          badge: './icons/icon-192.png',
           vibrate: [200, 100, 200],
           data: payload.data || {}
         });
@@ -41,4 +41,12 @@ self.addEventListener('notificationclick', (event) => {
       return clients.openWindow(self.registration.scope || '/');
     })
   );
+});
+
+// Minimal fetch listener for PWA installability requirement
+self.addEventListener('fetch', (event) => {
+  // Let the browser do its default thing for non-GET requests
+  if (event.request.method !== 'GET') return;
+  // Pass-through fetch
+  event.respondWith(fetch(event.request));
 });
