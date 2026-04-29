@@ -132,11 +132,7 @@
   // Service worker registration (PWA installability)
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker
-        .register(url('/service-worker.js'), { scope: url('/') })
-        .catch((err) => console.warn('SW register failed', err));
-
-      // Firebase Messaging SW
+      // Firebase Messaging SW (also serves as PWA offline fetch handler)
       navigator.serviceWorker
         .register(url('/firebase-messaging-sw.js'), { scope: url('/') })
         .then((reg) => {

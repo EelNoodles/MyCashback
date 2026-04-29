@@ -71,6 +71,53 @@ router.use('/uploads', express.static(path.join(__dirname, 'public/uploads'), {
 // Health check (no auth)
 router.get('/healthz', (req, res) => res.json({ ok: true, ts: Date.now() }));
 
+// PWA: Serve manifest and Service Worker publicly
+router.get('/manifest.webmanifest', (req, res) => {
+  const baseUrl = (process.env.BASE_URL || '').replace(/\/$/, '') || '/';
+  res.type('application/manifest+json');
+  res.json({
+    name: 'MyCashback 點數追蹤',
+    short_name: 'MyCashback',
+    description: '點數與回饋資產管理中樞',
+    start_url: baseUrl === '/' ? '/' : baseUrl + '/',
+    scope: baseUrl === '/' ? '/' : baseUrl + '/',
+    display: 'standalone',
+    background_color: '#f8fafc',
+    theme_color: '#2563eb',
+    orientation: 'portrait-primary',
+    icons: [
+      {
+        src: (baseUrl === '/' ? '' : baseUrl) + '/static/icons/icon-192.png',
+        sizes: '192x192',
+        type: 'image/png',
+        purpose: 'any maskable'
+      },
+      {
+        src: (baseUrl === '/' ? '' : baseUrl) + '/static/icons/icon-512.png',
+        sizes: '512x512',
+        type: 'image/png',
+        purpose: 'any maskable'
+      }
+    ],
+    shortcuts: [
+      {
+        name: '點數時間軸',
+        url: (baseUrl === '/' ? '' : baseUrl) + '/points'
+      },
+      {
+        name: '回饋活動',
+        url: (baseUrl === '/' ? '' : baseUrl) + '/cashback'
+      }
+    ]
+  });
+});
+
+router.get('/firebase-messaging-sw.js', (req, res) => {
+  res.type('application/javascript');
+  res.set('Cache-Control', 'no-cache');
+  res.sendFile(path.join(__dirname, 'public/firebase-messaging-sw.js'));
+});
+
 // Auth routes (login page is public, sessionLogin posts ID token)
 router.use('/auth', authRoutes);
 

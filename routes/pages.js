@@ -34,14 +34,14 @@ router.get('/manifest.webmanifest', (req, res) => {
   const baseUrl = (process.env.BASE_URL || '').replace(/\/$/, '') || '/';
   res.type('application/manifest+json');
   res.json({
-    name: 'Points & Cashback Hub',
-    short_name: 'Cashback',
+    name: 'MyCashback 點數追蹤',
+    short_name: 'MyCashback',
     description: '點數與回饋資產管理中樞',
     start_url: baseUrl === '/' ? '/' : baseUrl + '/',
     scope: baseUrl === '/' ? '/' : baseUrl + '/',
     display: 'standalone',
-    background_color: '#0b1220',
-    theme_color: '#1a76f5',
+    background_color: '#f8fafc',
+    theme_color: '#2563eb',
     orientation: 'portrait-primary',
     icons: [
       {
@@ -70,10 +70,11 @@ router.get('/manifest.webmanifest', (req, res) => {
   });
 });
 
-router.get('/service-worker.js', (req, res) => {
+// Serve the Service Worker at root scope
+router.get('/firebase-messaging-sw.js', (req, res) => {
   res.type('application/javascript');
   res.set('Cache-Control', 'no-cache');
-  res.sendFile(require('path').resolve('./public/service-worker.js'));
+  res.sendFile(require('path').resolve(__dirname, '../public/firebase-messaging-sw.js'));
 });
 
 module.exports = router;
