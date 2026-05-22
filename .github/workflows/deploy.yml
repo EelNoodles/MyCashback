@@ -22,5 +22,6 @@ jobs:
           script: |
             cd /var/www/MyCashback
             git pull
-            npm install
+            npm install --include=dev
+            npm run build:css
             pm2 restart mycashback
