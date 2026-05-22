@@ -136,9 +136,11 @@
       navigator.serviceWorker
         .register(url('/firebase-messaging-sw.js'), { scope: url('/') })
         .then((reg) => {
-          // Pass Firebase config to the messaging SW
+          // Pass Firebase config to the messaging SW.
+          // messagingSenderId is mandatory for firebase.messaging(); skip
+          // the handoff when it is absent so the SW does not throw.
           const cfg = window.FIREBASE_CONFIG;
-          if (cfg && cfg.apiKey && reg.active) {
+          if (cfg && cfg.apiKey && cfg.messagingSenderId && reg.active) {
             reg.active.postMessage({ type: 'FIREBASE_CONFIG', config: cfg });
           }
         })
@@ -149,7 +151,7 @@
   // FCM push notification setup
   async function initFcmPush() {
     const cfg = window.FIREBASE_CONFIG;
-    if (!cfg || !cfg.apiKey) return;
+    if (!cfg || !cfg.apiKey || !cfg.messagingSenderId) return;
     if (!('Notification' in window)) return;
 
     try {
@@ -181,7 +183,8 @@
   }
 
   // Auto-init FCM on authenticated pages
-  if (window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.apiKey && document.getElementById('logoutBtn')) {
+  if (window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.apiKey
+      && window.FIREBASE_CONFIG.messagingSenderId && document.getElementById('logoutBtn')) {
     setTimeout(initFcmPush, 2000); // delay to not block page load
   }
 
