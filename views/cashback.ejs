@@ -20,30 +20,60 @@
 
     <!-- Filters -->
     <section class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 space-y-3">
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
-        <label class="block md:col-span-2">
-          <span class="text-xs text-slate-500">搜尋（活動 / 卡片 / 支付）</span>
-          <input id="qInput" type="search" placeholder="例如：玉山 Pi 卡 或 LINE Pay"
-                 class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-        </label>
-        <label class="block">
-          <span class="text-xs text-slate-500">指定卡片</span>
-          <select id="cardFilter" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-            <option value="">全部</option>
-          </select>
-        </label>
-        <label class="block">
-          <span class="text-xs text-slate-500">指定支付方式</span>
-          <select id="pmFilter" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-            <option value="">全部</option>
-          </select>
-        </label>
-      </div>
+      <!-- Search mode -->
       <div class="flex items-center gap-2 text-xs">
-        <span class="text-slate-500">狀態：</span>
-        <button data-status="active" class="status-chip px-3 py-1 rounded-full bg-brand-600 text-white">進行中</button>
-        <button data-status="expired" class="status-chip px-3 py-1 rounded-full border border-slate-300 text-slate-600">已結束</button>
-        <button data-status="all" class="status-chip px-3 py-1 rounded-full border border-slate-300 text-slate-600">全部</button>
+        <span class="text-slate-500">搜尋模式：</span>
+        <button data-mode="normal" class="mode-chip px-3 py-1 rounded-full bg-brand-600 text-white">一般搜尋</button>
+        <button data-mode="ai" class="mode-chip px-3 py-1 rounded-full border border-slate-300 text-slate-600">✨ AI 智能搜尋</button>
+      </div>
+
+      <!-- Normal filters -->
+      <div id="normalFilters" class="space-y-3">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <label class="block md:col-span-2">
+            <span class="text-xs text-slate-500">搜尋（活動 / 卡片 / 支付）</span>
+            <input id="qInput" type="search" placeholder="例如：玉山 Pi 卡 或 LINE Pay"
+                   class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          </label>
+          <label class="block">
+            <span class="text-xs text-slate-500">指定卡片</span>
+            <select id="cardFilter" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+              <option value="">全部</option>
+            </select>
+          </label>
+          <label class="block">
+            <span class="text-xs text-slate-500">指定支付方式</span>
+            <select id="pmFilter" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+              <option value="">全部</option>
+            </select>
+          </label>
+        </div>
+        <div class="flex items-center gap-2 text-xs">
+          <span class="text-slate-500">狀態：</span>
+          <button data-status="active" class="status-chip px-3 py-1 rounded-full bg-brand-600 text-white">進行中</button>
+          <button data-status="expired" class="status-chip px-3 py-1 rounded-full border border-slate-300 text-slate-600">已結束</button>
+          <button data-status="all" class="status-chip px-3 py-1 rounded-full border border-slate-300 text-slate-600">全部</button>
+        </div>
+      </div>
+
+      <!-- AI search -->
+      <div id="aiSearchWrap" class="hidden space-y-2">
+        <label class="block">
+          <span class="text-xs text-slate-500">AI 智能搜尋（輸入消費場景 / 通路 / 商家）</span>
+          <div class="mt-1 flex gap-2">
+            <input id="aiSearchInput" type="search" placeholder="例如：Foodpanda、外送、超商、加油、訂房"
+                   class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+            <button id="aiSearchBtn" type="button"
+                    class="px-4 py-2 text-sm rounded-lg bg-brand-600 text-white hover:bg-brand-700 disabled:bg-brand-300 whitespace-nowrap">
+              <span data-state="idle">AI 搜尋</span><span data-state="loading" class="hidden">分析中…</span>
+            </button>
+          </div>
+        </label>
+        <label class="flex items-center gap-2 text-xs text-slate-500">
+          <input id="aiWebToggle" type="checkbox" class="rounded border-slate-300" />
+          允許 AI 聯網查詢最新活動（較慢、耗用較多額度）
+        </label>
+        <p class="text-[11px] text-slate-400">AI 會分析你已記錄的所有進行中活動，推薦回饋最高的卡片 / 支付組合並提醒注意事項。</p>
       </div>
     </section>
 
