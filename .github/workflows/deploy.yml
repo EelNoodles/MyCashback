@@ -1,6 +1,5 @@
 name: Deploy to Vultr VPS
 
-# 觸發時機：當 main 分支收到 push 時 (如果你的主分支叫 master，請改成 master)
 on:
   push:
     branches:
@@ -10,6 +9,9 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     
+    # 👇 就是這一行！告訴 GitHub 去解鎖 production 的 Environment secrets
+    environment: production 
+    
     steps:
       - name: SSH into VPS and trigger deployment
         uses: appleboy/ssh-action@v1.0.3
@@ -17,7 +19,6 @@ jobs:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_KEY }}
-          # 這是 GitHub 登入 VPS 後會自動打的指令：
           script: |
             cd /var/www/BlingStudio
             git pull origin main
