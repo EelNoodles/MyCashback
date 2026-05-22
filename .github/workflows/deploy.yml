@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     
     # 👇 就是這一行！告訴 GitHub 去解鎖 production 的 Environment secrets
-    environment: production 
+    environment: MyVPS 
     
     steps:
       - name: SSH into VPS and trigger deployment
