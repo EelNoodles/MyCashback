@@ -351,52 +351,78 @@
   }
 
   // ─── AI search ───
+  const RANK_LABEL = { 1: '最佳推薦', 2: '次選方案', 3: '備選方案' };
+
   function aiRecCardEl(rec, rank, refMap) {
     const card = document.createElement('div');
-    card.className = 'card p-4 col-span-full md:col-span-1';
+    const isTop = rank === 1;
+    card.className = 'col-span-full bg-white rounded-2xl shadow-sm p-5 sm:p-6 '
+      + (isTop ? 'border border-brand-200 ring-1 ring-brand-100' : 'border border-slate-200');
 
     const cautions = (rec.cautions || []).map((c) =>
-      `<li class="flex gap-1.5"><span class="text-amber-500 flex-shrink-0">⚠</span><span>${escapeHtml(c)}</span></li>`
+      `<li class="flex gap-2"><span class="text-amber-500 flex-shrink-0 mt-px">•</span><span class="leading-relaxed">${escapeHtml(c)}</span></li>`
     ).join('');
 
     const refs = (rec.eventIds || []).map((id) => refMap.get(id)).filter(Boolean);
     const refHtml = refs.map((r) => r.sourceUrl
-      ? `<a href="${escapeHtml(r.sourceUrl)}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 text-[11px] text-brand-600 hover:underline">🔗 ${escapeHtml(r.title)}</a>`
-      : `<span class="text-[11px] text-slate-500">📋 ${escapeHtml(r.title)}</span>`
+      ? `<a href="${escapeHtml(r.sourceUrl)}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700 hover:underline">🔗 ${escapeHtml(r.title)}</a>`
+      : `<span class="inline-flex items-center gap-1 text-xs text-slate-500">📋 ${escapeHtml(r.title)}</span>`
     ).join('');
 
     const checkBtn = rec.checkUrl
-      ? `<a href="${escapeHtml(rec.checkUrl)}" target="_blank" rel="noopener" class="mt-3 inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg bg-brand-600 text-white hover:bg-brand-700">前往查看 / 確認名額 →</a>`
+      ? `<a href="${escapeHtml(rec.checkUrl)}" target="_blank" rel="noopener" class="mt-4 inline-flex items-center justify-center gap-1.5 px-4 py-2 text-sm font-medium rounded-xl bg-brand-600 text-white hover:bg-brand-700 transition">前往查看 ‧ 確認名額 <span aria-hidden="true">→</span></a>`
       : '';
 
     card.innerHTML = `
-      <div class="flex items-start gap-3">
-        <div class="flex-shrink-0 w-7 h-7 rounded-full bg-brand-600 text-white text-sm font-semibold grid place-items-center">${rank}</div>
+      <div class="flex items-start gap-4">
+        <div class="flex-shrink-0 w-11 h-11 rounded-full grid place-items-center text-lg font-bold ${isTop ? 'bg-brand-600 text-white' : 'bg-brand-50 text-brand-700 border border-brand-100'}">${rank}</div>
         <div class="min-w-0 flex-1">
-          <div class="font-semibold">${escapeHtml(rec.title)}</div>
-          ${rec.rewardText ? `<div class="text-brand-600 font-semibold text-sm mt-0.5">${escapeHtml(rec.rewardText)}</div>` : ''}
+          <div class="text-[11px] font-medium tracking-widest text-slate-400 uppercase">${RANK_LABEL[rank] || ('推薦 ' + rank)}</div>
+          <h3 class="text-lg font-semibold text-slate-800 mt-0.5 leading-snug break-words">${escapeHtml(rec.title)}</h3>
+          ${rec.rewardText ? `<div class="mt-2"><span class="inline-flex items-center px-3 py-1 rounded-full bg-brand-50 text-brand-700 text-sm font-semibold border border-brand-100">${escapeHtml(rec.rewardText)}</span></div>` : ''}
         </div>
       </div>
-      ${rec.reason ? `<p class="text-sm text-slate-600 mt-2 whitespace-pre-wrap">${escapeHtml(rec.reason)}</p>` : ''}
-      ${cautions ? `<ul class="mt-2 space-y-1 text-xs text-slate-600 bg-amber-50 border border-amber-100 rounded-lg p-2">${cautions}</ul>` : ''}
-      ${refHtml ? `<div class="mt-2 flex flex-wrap gap-x-3 gap-y-1">${refHtml}</div>` : ''}
+
+      ${rec.reason ? `<p class="text-sm text-slate-600 leading-relaxed mt-4 whitespace-pre-wrap">${escapeHtml(rec.reason)}</p>` : ''}
+
+      ${cautions ? `
+      <div class="mt-4 rounded-xl bg-amber-50 border border-amber-100 p-3.5">
+        <div class="flex items-center gap-1.5 text-xs font-semibold text-amber-700 mb-1.5">
+          <span aria-hidden="true">⚠️</span><span>注意事項</span>
+        </div>
+        <ul class="space-y-1 text-xs text-amber-800">${cautions}</ul>
+      </div>` : ''}
+
+      ${refHtml ? `
+      <div class="mt-4 pt-3 border-t border-slate-100">
+        <div class="text-[11px] text-slate-400 mb-1.5">相關活動</div>
+        <div class="flex flex-wrap gap-x-4 gap-y-1.5">${refHtml}</div>
+      </div>` : ''}
+
       ${checkBtn}`;
     return card;
   }
 
   function renderAiResults(data) {
     listEl.innerHTML = '';
+    const recs = data.recommendations || [];
+
     const top = document.createElement('div');
     top.className = 'col-span-full';
     const cachedTag = data.cached
-      ? '<span class="ml-2 text-[10px] text-slate-400">· 快取結果</span>' : '';
-    top.innerHTML = `<div class="text-sm text-slate-700 bg-brand-50 border border-brand-100 rounded-xl px-3 py-2">✨ ${escapeHtml(data.summary || '')}${cachedTag}</div>`;
+      ? '<span class="ml-1.5 text-[10px] font-normal text-slate-400">· 快取</span>' : '';
+    top.innerHTML = `
+      <div class="rounded-2xl bg-gradient-to-br from-brand-50 to-white border border-brand-100 px-4 py-3.5">
+        <div class="flex items-center gap-1.5 text-[11px] font-semibold tracking-widest text-brand-600 uppercase">
+          <span aria-hidden="true">✨</span><span>AI 智能分析</span>${cachedTag}
+        </div>
+        <p class="text-sm text-slate-700 leading-relaxed mt-1">${escapeHtml(data.summary || '')}</p>
+      </div>`;
     listEl.appendChild(top);
 
-    const recs = data.recommendations || [];
     if (!recs.length) {
       const empty = document.createElement('div');
-      empty.className = 'text-sm text-slate-400 col-span-full';
+      empty.className = 'col-span-full text-center text-sm text-slate-400 py-8';
       empty.textContent = '找不到相關的回饋方案，試試其他關鍵字，或先新增更多活動。';
       listEl.appendChild(empty);
       return;
