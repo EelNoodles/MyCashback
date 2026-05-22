@@ -29,7 +29,16 @@
   const aiAnalyzeBtn = document.getElementById('aiAnalyzeBtn');
   const aiApplyBtn = document.getElementById('aiApplyBtn');
 
+  // AI search
+  const modeChips = document.querySelectorAll('.mode-chip');
+  const normalFilters = document.getElementById('normalFilters');
+  const aiSearchWrap = document.getElementById('aiSearchWrap');
+  const aiSearchInput = document.getElementById('aiSearchInput');
+  const aiSearchBtn = document.getElementById('aiSearchBtn');
+  const aiWebToggle = document.getElementById('aiWebToggle');
+
   let state = {
+    mode: 'normal',
     status: 'active',
     q: '',
     cardId: '',
@@ -44,6 +53,14 @@
   function debounce(fn, ms) {
     let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
   }
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  const SPINNER_SVG = '<svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>';
 
   const NETWORK_LABELS = {
     visa: 'VISA', mastercard: 'MC', jcb: 'JCB',
@@ -332,6 +349,115 @@
       listEl.innerHTML = `<div class="text-sm text-rose-500 col-span-full">載入失敗：${err.message}</div>`;
     }
   }
+
+  // ─── AI search ───
+  function aiRecCardEl(rec, rank, refMap) {
+    const card = document.createElement('div');
+    card.className = 'card p-4 col-span-full md:col-span-1';
+
+    const cautions = (rec.cautions || []).map((c) =>
+      `<li class="flex gap-1.5"><span class="text-amber-500 flex-shrink-0">⚠</span><span>${escapeHtml(c)}</span></li>`
+    ).join('');
+
+    const refs = (rec.eventIds || []).map((id) => refMap.get(id)).filter(Boolean);
+    const refHtml = refs.map((r) => r.sourceUrl
+      ? `<a href="${escapeHtml(r.sourceUrl)}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 text-[11px] text-brand-600 hover:underline">🔗 ${escapeHtml(r.title)}</a>`
+      : `<span class="text-[11px] text-slate-500">📋 ${escapeHtml(r.title)}</span>`
+    ).join('');
+
+    const checkBtn = rec.checkUrl
+      ? `<a href="${escapeHtml(rec.checkUrl)}" target="_blank" rel="noopener" class="mt-3 inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg bg-brand-600 text-white hover:bg-brand-700">前往查看 / 確認名額 →</a>`
+      : '';
+
+    card.innerHTML = `
+      <div class="flex items-start gap-3">
+        <div class="flex-shrink-0 w-7 h-7 rounded-full bg-brand-600 text-white text-sm font-semibold grid place-items-center">${rank}</div>
+        <div class="min-w-0 flex-1">
+          <div class="font-semibold">${escapeHtml(rec.title)}</div>
+          ${rec.rewardText ? `<div class="text-brand-600 font-semibold text-sm mt-0.5">${escapeHtml(rec.rewardText)}</div>` : ''}
+        </div>
+      </div>
+      ${rec.reason ? `<p class="text-sm text-slate-600 mt-2 whitespace-pre-wrap">${escapeHtml(rec.reason)}</p>` : ''}
+      ${cautions ? `<ul class="mt-2 space-y-1 text-xs text-slate-600 bg-amber-50 border border-amber-100 rounded-lg p-2">${cautions}</ul>` : ''}
+      ${refHtml ? `<div class="mt-2 flex flex-wrap gap-x-3 gap-y-1">${refHtml}</div>` : ''}
+      ${checkBtn}`;
+    return card;
+  }
+
+  function renderAiResults(data) {
+    listEl.innerHTML = '';
+    const top = document.createElement('div');
+    top.className = 'col-span-full';
+    const cachedTag = data.cached
+      ? '<span class="ml-2 text-[10px] text-slate-400">· 快取結果</span>' : '';
+    top.innerHTML = `<div class="text-sm text-slate-700 bg-brand-50 border border-brand-100 rounded-xl px-3 py-2">✨ ${escapeHtml(data.summary || '')}${cachedTag}</div>`;
+    listEl.appendChild(top);
+
+    const recs = data.recommendations || [];
+    if (!recs.length) {
+      const empty = document.createElement('div');
+      empty.className = 'text-sm text-slate-400 col-span-full';
+      empty.textContent = '找不到相關的回饋方案，試試其他關鍵字，或先新增更多活動。';
+      listEl.appendChild(empty);
+      return;
+    }
+
+    const refMap = new Map((data.refs || []).map((r) => [r.id, r]));
+    recs.forEach((rec, i) => listEl.appendChild(aiRecCardEl(rec, i + 1, refMap)));
+  }
+
+  async function runAiSearch() {
+    const query = aiSearchInput.value.trim();
+    if (!query) { aiSearchInput.focus(); return; }
+    A.setLoading(aiSearchBtn, true);
+    listEl.innerHTML = `<div class="text-sm text-slate-400 col-span-full py-6 flex items-center justify-center gap-2">${SPINNER_SVG} AI 分析中…</div>`;
+    try {
+      const data = await A.jsonFetch(A.api('/ai/search-rewards'), {
+        method: 'POST',
+        body: { query, web: !!(aiWebToggle && aiWebToggle.checked) }
+      });
+      renderAiResults(data);
+    } catch (err) {
+      let msg = err.message;
+      if (err.body && err.body.error === 'GEMINI_NOT_CONFIGURED') {
+        msg = '尚未設定 AI 金鑰（GEMINI_API_KEY），無法使用 AI 搜尋。';
+      }
+      listEl.innerHTML = `<div class="text-sm text-rose-500 col-span-full">AI 搜尋失敗：${escapeHtml(msg)}</div>`;
+    } finally {
+      A.setLoading(aiSearchBtn, false);
+    }
+  }
+
+  modeChips.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.mode;
+      if (mode === state.mode) return;
+      state.mode = mode;
+      modeChips.forEach((b) => {
+        const on = b.dataset.mode === mode;
+        b.classList.toggle('bg-brand-600', on);
+        b.classList.toggle('text-white', on);
+        b.classList.toggle('border', !on);
+        b.classList.toggle('border-slate-300', !on);
+        b.classList.toggle('text-slate-600', !on);
+      });
+      if (mode === 'ai') {
+        normalFilters.classList.add('hidden');
+        aiSearchWrap.classList.remove('hidden');
+        listEl.innerHTML = '<div class="text-sm text-slate-400 col-span-full">輸入消費場景或商家，讓 AI 推薦回饋最高的方案。</div>';
+        aiSearchInput.focus();
+      } else {
+        aiSearchWrap.classList.add('hidden');
+        normalFilters.classList.remove('hidden');
+        loadEvents();
+      }
+    });
+  });
+
+  aiSearchBtn?.addEventListener('click', runAiSearch);
+  aiSearchInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); runAiSearch(); }
+  });
 
   // ─── Filter wiring ───
   qInput.addEventListener('input', debounce(() => {
