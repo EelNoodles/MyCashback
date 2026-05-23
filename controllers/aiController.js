@@ -5,7 +5,7 @@ const { Op } = require('sequelize');
 const { CashbackEvent, Card, PaymentMethod } = require('../models');
 const logger = require('../config/logger');
 
-const DEFAULT_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const DEFAULT_MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
 const MODEL_NAME_RE = /^[a-z0-9][a-z0-9.\-]{1,80}$/i;
 
 let genaiClient = null;
@@ -321,62 +321,19 @@ exports.searchRewards = async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────
 // 列出可用 Gemini 模型  GET /api/ai/models
 //
-// 動態向 Google Generative Language API 查詢支援 generateContent 的
-// Gemini 模型，依版本 / 等級排序，並快取 1 小時。若未設定金鑰或查詢
-// 失敗，回傳一份精簡的硬編後備清單，前端仍可正常顯示下拉選單。
+// 精選清單：涵蓋三個世代各自的 Pro / Flash，覆蓋「分析品質優先」與
+// 「速度 / 額度優先」兩種需求。若 Google 釋出更新型號，這裡再加。
 // ─────────────────────────────────────────────────────────────
 
-const FALLBACK_MODELS = [
-  { name: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro', description: '最強推理，回覆較慢、額度消耗較高' },
-  { name: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', description: '速度與品質平衡，預設' },
-  { name: 'gemini-2.5-flash-lite', displayName: 'Gemini 2.5 Flash Lite', description: '最快、最省，適合短查詢' },
-  { name: 'gemini-2.0-flash', displayName: 'Gemini 2.0 Flash', description: '上一代 Flash' }
+const CURATED_MODELS = [
+  { name: 'gemini-3.5-pro',   displayName: 'Gemini 3.5 Pro',   description: '最強推理，分析最精準；回覆較慢、額度耗用最高' },
+  { name: 'gemini-3.5-flash', displayName: 'Gemini 3.5 Flash', description: '新世代均衡款，速度與品質兼顧（預設）' },
+  { name: 'gemini-3.1-pro',   displayName: 'Gemini 3.1 Pro',   description: '上一代 Pro，推理品質佳' },
+  { name: 'gemini-3.1-flash', displayName: 'Gemini 3.1 Flash', description: '上一代 Flash，速度快' },
+  { name: 'gemini-2.5-pro',   displayName: 'Gemini 2.5 Pro',   description: '經典強力，相容性佳' },
+  { name: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', description: '經典輕量，最省額度' }
 ];
 
-const MODELS_TTL = 60 * 60 * 1000;
-let modelsListCache = null; // { at, list }
-
-function modelScore(name) {
-  const m = /gemini-(\d+(?:\.\d+)?)/.exec(name);
-  const version = m ? parseFloat(m[1]) : 0;
-  let tier = 0;
-  if (/-pro\b/.test(name)) tier = 3;
-  else if (/-flash-lite\b/.test(name)) tier = 1;
-  else if (/-flash\b/.test(name)) tier = 2;
-  // Demote preview / experimental builds.
-  const penalty = /(preview|exp|experimental)/i.test(name) ? -100 : 0;
-  return version * 10 + tier + penalty;
-}
-
-exports.listModels = async (req, res) => {
-  if (modelsListCache && Date.now() - modelsListCache.at < MODELS_TTL) {
-    return res.json({ models: modelsListCache.list, default: DEFAULT_MODEL, cached: true });
-  }
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) {
-    return res.json({ models: FALLBACK_MODELS, default: DEFAULT_MODEL, fallback: true });
-  }
-  try {
-    const r = await fetch(
-      'https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=' + encodeURIComponent(key)
-    );
-    if (!r.ok) throw new Error('upstream ' + r.status);
-    const j = await r.json();
-    const list = (j.models || [])
-      .filter((m) => Array.isArray(m.supportedGenerationMethods)
-        && m.supportedGenerationMethods.includes('generateContent'))
-      .map((m) => ({
-        name: String(m.name || '').replace(/^models\//, ''),
-        displayName: m.displayName || '',
-        description: m.description || ''
-      }))
-      .filter((m) => /^gemini-/.test(m.name)
-        && !/(embedding|aqa|tuning|gecko)/i.test(m.name))
-      .sort((a, b) => modelScore(b.name) - modelScore(a.name));
-    modelsListCache = { at: Date.now(), list };
-    res.json({ models: list, default: DEFAULT_MODEL });
-  } catch (err) {
-    logger.warn('listModels failed, returning fallback', { err: err.message });
-    res.json({ models: FALLBACK_MODELS, default: DEFAULT_MODEL, fallback: true });
-  }
+exports.listModels = (req, res) => {
+  res.json({ models: CURATED_MODELS, default: DEFAULT_MODEL });
 };
