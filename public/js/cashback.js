@@ -36,9 +36,15 @@
   const aiSearchInput = document.getElementById('aiSearchInput');
   const aiSearchBtn = document.getElementById('aiSearchBtn');
   const aiWebToggle = document.getElementById('aiWebToggle');
+  const aiModelSelect = document.getElementById('aiModelSelect');
+  const aiParseModelSelect = document.getElementById('aiParseModel');
+
+  const AI_MODEL_STORAGE_KEY = 'mycashback.aiModel';
 
   let state = {
     mode: 'normal',
+    aiModel: localStorage.getItem(AI_MODEL_STORAGE_KEY) || '',
+    aiModels: [],
     status: 'active',
     q: '',
     cardId: '',
@@ -350,6 +356,57 @@
     }
   }
 
+  // ─── AI model picker ───
+  function shortModelLabel(m) {
+    // Strip the leading "Gemini" Google uses in displayName to keep options compact.
+    const label = (m.displayName || m.name || '').replace(/^Gemini\s*/i, '').trim() || m.name;
+    return 'Gemini ' + label;
+  }
+
+  function paintModelSelect(selectEl) {
+    if (!selectEl) return;
+    if (!state.aiModels.length) {
+      selectEl.innerHTML = '<option value="">（無法載入模型）</option>';
+      return;
+    }
+    selectEl.innerHTML = state.aiModels.map((m) => {
+      const sel = m.name === state.aiModel ? ' selected' : '';
+      const desc = m.description ? ` title="${escapeHtml(m.description)}"` : '';
+      return `<option value="${escapeHtml(m.name)}"${sel}${desc}>${escapeHtml(shortModelLabel(m))}</option>`;
+    }).join('');
+  }
+
+  function setAiModel(name) {
+    state.aiModel = name || '';
+    if (state.aiModel) localStorage.setItem(AI_MODEL_STORAGE_KEY, state.aiModel);
+    else localStorage.removeItem(AI_MODEL_STORAGE_KEY);
+    if (aiModelSelect && aiModelSelect.value !== state.aiModel) aiModelSelect.value = state.aiModel;
+    if (aiParseModelSelect && aiParseModelSelect.value !== state.aiModel) aiParseModelSelect.value = state.aiModel;
+  }
+
+  async function loadAiModels() {
+    try {
+      const data = await A.jsonFetch(A.api('/ai/models'));
+      state.aiModels = Array.isArray(data && data.models) ? data.models : [];
+      // Resolve selected model: stored choice if still available, else server default.
+      const stored = state.aiModel;
+      const has = (n) => state.aiModels.some((m) => m.name === n);
+      if (!stored || !has(stored)) {
+        state.aiModel = has(data.default) ? data.default : (state.aiModels[0] && state.aiModels[0].name) || '';
+        if (state.aiModel) localStorage.setItem(AI_MODEL_STORAGE_KEY, state.aiModel);
+      }
+      paintModelSelect(aiModelSelect);
+      paintModelSelect(aiParseModelSelect);
+    } catch (err) {
+      state.aiModels = [];
+      paintModelSelect(aiModelSelect);
+      paintModelSelect(aiParseModelSelect);
+    }
+  }
+
+  aiModelSelect?.addEventListener('change', () => setAiModel(aiModelSelect.value));
+  aiParseModelSelect?.addEventListener('change', () => setAiModel(aiParseModelSelect.value));
+
   // ─── AI search ───
   const RANK_LABEL = { 1: '最佳推薦', 2: '次選方案', 3: '備選方案' };
 
@@ -440,7 +497,11 @@
     try {
       const data = await A.jsonFetch(A.api('/ai/search-rewards'), {
         method: 'POST',
-        body: { query, web: !!(aiWebToggle && aiWebToggle.checked) }
+        body: {
+          query,
+          web: !!(aiWebToggle && aiWebToggle.checked),
+          model: state.aiModel || undefined
+        }
       });
       renderAiResults(data);
     } catch (err) {
@@ -620,7 +681,7 @@
     A.showError(aiError, '');
     try {
       const data = await A.jsonFetch(A.api('/ai/parse-event'), {
-        method: 'POST', body: { text }
+        method: 'POST', body: { text, model: state.aiModel || undefined }
       });
       state.aiResult = data;
       aiPreview.classList.remove('hidden');
@@ -672,4 +733,5 @@
 
   // Boot
   loadTags().then(loadEvents);
+  loadAiModels();
 })();
