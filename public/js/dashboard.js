@@ -255,6 +255,10 @@
       stats.querySelector('[data-stat="count"]').textContent = points.length;
       stats.querySelector('[data-stat="activeEvents"]').textContent = events.length;
 
+      const totalBalance = points.reduce((sum, p) => sum + (Number(p.currentBalance) || 0), 0);
+      const totalEl = document.querySelector('[data-stat="totalBalance"]');
+      if (totalEl) totalEl.textContent = A.fmtNumber(totalBalance);
+
       // Earned/spent this month
       const monthKey = new Date().toISOString().slice(0, 7);
       let earned = 0; let spent = 0;

@@ -10,6 +10,14 @@
 
   const newEventBtn = document.getElementById('newEventBtn');
   const aiParseBtn = document.getElementById('aiParseBtn');
+  const aiKeysBtn = document.getElementById('aiKeysBtn');
+
+  // AI keys modal
+  const aiKeysList = document.getElementById('aiKeysList');
+  const aiKeysEmpty = document.getElementById('aiKeysEmpty');
+  const aiKeysError = document.getElementById('aiKeysError');
+  const aiKeyAddForm = document.getElementById('aiKeyAddForm');
+  const aiKeyAddError = document.getElementById('aiKeyAddError');
 
   // Form
   const eventForm = document.getElementById('eventForm');
@@ -406,6 +414,106 @@
 
   aiModelSelect?.addEventListener('change', () => setAiModel(aiModelSelect.value));
   aiParseModelSelect?.addEventListener('change', () => setAiModel(aiParseModelSelect.value));
+
+  // ─── AI key management ───
+  function aiKeyRowEl(k) {
+    const li = document.createElement('li');
+    li.className = 'flex items-center gap-3 rounded-xl border border-slate-200 p-3'
+      + (k.isActive ? ' bg-brand-50 border-brand-200' : '');
+    li.dataset.id = k.id;
+    li.innerHTML = `
+      <input type="radio" name="aiActiveKey" class="text-brand-600" ${k.isActive ? 'checked' : ''} data-action="activate" />
+      <div class="min-w-0 flex-1">
+        <div class="font-medium text-sm truncate" data-field="name">${escapeHtml(k.name)}</div>
+        <div class="text-[11px] text-slate-500 font-mono">${escapeHtml(k.keyMask)}</div>
+      </div>
+      <button type="button" data-action="rename" class="text-xs text-slate-500 hover:text-slate-700">重新命名</button>
+      <button type="button" data-action="delete" class="text-xs text-rose-600 hover:text-rose-700">刪除</button>
+    `;
+    return li;
+  }
+
+  function renderAiKeys(keys) {
+    aiKeysList.innerHTML = '';
+    if (!keys.length) {
+      aiKeysEmpty.classList.remove('hidden');
+      return;
+    }
+    aiKeysEmpty.classList.add('hidden');
+    keys.forEach((k) => aiKeysList.appendChild(aiKeyRowEl(k)));
+  }
+
+  async function loadAiKeys() {
+    A.showError(aiKeysError, '');
+    try {
+      const keys = await A.jsonFetch(A.api('/ai/keys'));
+      renderAiKeys(keys);
+    } catch (err) {
+      A.showError(aiKeysError, '載入失敗：' + err.message);
+    }
+  }
+
+  aiKeysBtn?.addEventListener('click', () => {
+    A.showError(aiKeyAddError, '');
+    aiKeyAddForm.reset();
+    aiKeyAddForm.makeActive.checked = true;
+    loadAiKeys();
+    A.openModal('aiKeysModal');
+  });
+
+  aiKeysList?.addEventListener('click', async (e) => {
+    const action = e.target.closest('[data-action]')?.dataset.action;
+    if (!action) return;
+    const li = e.target.closest('li[data-id]');
+    if (!li) return;
+    const id = li.dataset.id;
+    A.showError(aiKeysError, '');
+    try {
+      if (action === 'activate') {
+        await A.jsonFetch(A.api(`/ai/keys/${id}`), { method: 'PUT', body: { isActive: true } });
+        await loadAiKeys();
+        loadAiModels();
+      } else if (action === 'rename') {
+        const current = li.querySelector('[data-field="name"]').textContent;
+        const name = prompt('重新命名金鑰', current);
+        if (!name || !name.trim() || name.trim() === current) return;
+        await A.jsonFetch(A.api(`/ai/keys/${id}`), { method: 'PUT', body: { name: name.trim() } });
+        await loadAiKeys();
+      } else if (action === 'delete') {
+        if (!confirm('確定刪除這把金鑰？此操作無法復原。')) return;
+        await A.jsonFetch(A.api(`/ai/keys/${id}`), { method: 'DELETE' });
+        await loadAiKeys();
+        loadAiModels();
+      }
+    } catch (err) {
+      A.showError(aiKeysError, err.message);
+    }
+  });
+
+  aiKeyAddForm?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const submitBtn = aiKeyAddForm.querySelector('button[type=submit]');
+    A.setLoading(submitBtn, true);
+    A.showError(aiKeyAddError, '');
+    try {
+      await A.jsonFetch(A.api('/ai/keys'), {
+        method: 'POST',
+        body: {
+          name: aiKeyAddForm.name.value,
+          key: aiKeyAddForm.key.value,
+          makeActive: !!aiKeyAddForm.makeActive.checked
+        }
+      });
+      aiKeyAddForm.reset();
+      aiKeyAddForm.makeActive.checked = true;
+      await loadAiKeys();
+      loadAiModels();
+    } catch (err) {
+      A.showError(aiKeyAddError, err.message);
+    } finally {
+      A.setLoading(submitBtn, false);
+    }
+  });
 
   // ─── AI search ───
   const RANK_LABEL = { 1: '最佳推薦', 2: '次選方案', 3: '備選方案' };

@@ -12,7 +12,8 @@
         <h1 class="text-2xl font-semibold">回饋活動</h1>
         <p class="text-sm text-slate-500">標註信用卡 / 支付方式，搜尋並管理</p>
       </div>
-      <div class="flex gap-2">
+      <div class="flex gap-2 flex-wrap">
+        <button id="aiKeysBtn" class="px-3 py-2 text-sm rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50" title="管理 Gemini API 金鑰">🔑 AI 金鑰</button>
         <button id="aiParseBtn" class="px-3 py-2 text-sm rounded-lg border border-brand-300 text-brand-700 hover:bg-brand-50">AI 解析貼文</button>
         <button id="newEventBtn" class="px-3 py-2 text-sm rounded-lg bg-brand-600 text-white hover:bg-brand-700">+ 新增活動</button>
       </div>
@@ -233,6 +234,46 @@
         <button id="aiApplyBtn" type="button" disabled
                 class="px-3 py-2 text-sm rounded-lg bg-brand-600 text-white hover:bg-brand-700 disabled:bg-brand-300">套用到表單</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Modal: AI keys -->
+  <div id="aiKeysModal" class="hidden fixed inset-0 z-40 bg-black/40 grid place-items-center px-3 overflow-y-auto py-6">
+    <div class="bg-white w-full max-w-lg rounded-2xl shadow-xl p-5 animate-slide-up">
+      <div class="flex items-center justify-between">
+        <h3 class="text-lg font-semibold">AI 金鑰管理</h3>
+        <button type="button" data-dismiss="aiKeysModal" class="text-slate-400 hover:text-slate-600">✕</button>
+      </div>
+      <p class="text-xs text-slate-500 mt-1">儲存你的 Gemini API 金鑰；可新增多把並指定當前使用的金鑰。金鑰會以 AES-256-GCM 加密後存入資料庫，前端只會看到頭尾片段。</p>
+
+      <ul id="aiKeysList" class="mt-4 space-y-2"></ul>
+      <div id="aiKeysEmpty" class="hidden text-xs text-slate-400 mt-3">尚未儲存任何金鑰；新增一把後即可使用 AI 功能。</div>
+      <div id="aiKeysError" class="hidden mt-2 text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2"></div>
+
+      <form id="aiKeyAddForm" class="mt-5 border-t border-slate-100 pt-4 space-y-3">
+        <div class="text-xs font-semibold text-slate-600">＋ 新增金鑰</div>
+        <label class="block">
+          <span class="text-xs text-slate-500">名稱</span>
+          <input name="name" required maxlength="120" placeholder="例：個人 Gemini"
+                 class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        </label>
+        <label class="block">
+          <span class="text-xs text-slate-500">API Key</span>
+          <input name="key" type="password" required autocomplete="off" spellcheck="false" placeholder="AIza…"
+                 class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono" />
+        </label>
+        <label class="flex items-center gap-2 text-xs text-slate-500">
+          <input name="makeActive" type="checkbox" checked class="rounded border-slate-300" />
+          新增後設為使用中
+        </label>
+        <div id="aiKeyAddError" class="hidden text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2"></div>
+        <div class="flex justify-end gap-2">
+          <button type="button" data-dismiss="aiKeysModal" class="px-3 py-2 text-sm rounded-lg border border-slate-300">關閉</button>
+          <button type="submit" class="px-3 py-2 text-sm rounded-lg bg-brand-600 text-white hover:bg-brand-700">
+            <span data-state="idle">新增金鑰</span><span data-state="loading" class="hidden">儲存中…</span>
+          </button>
+        </div>
+      </form>
     </div>
   </div>
 

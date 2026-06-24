@@ -3,31 +3,39 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { Op } = require('sequelize');
 const { CashbackEvent, Card, PaymentMethod } = require('../models');
+const aiKeys = require('./aiKeyController');
 const logger = require('../config/logger');
 
 const DEFAULT_MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
 const MODEL_NAME_RE = /^[a-z0-9][a-z0-9.\-]{1,80}$/i;
 
-let genaiClient = null;
+// Per-key client + model caches so multiple users (each with their own key)
+// don't keep re-instantiating SDK objects.
+const clientCache = new Map();
 const modelCache = new Map();
 
-function getClient() {
-  if (genaiClient) return genaiClient;
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) throw Object.assign(new Error('GEMINI_API_KEY not configured'), {
-    status: 503, code: 'GEMINI_NOT_CONFIGURED'
-  });
-  genaiClient = new GoogleGenerativeAI(key);
-  return genaiClient;
+function notConfigured() {
+  return Object.assign(new Error('No Gemini API key configured (set one in settings or GEMINI_API_KEY)'),
+    { status: 503, code: 'GEMINI_NOT_CONFIGURED' });
 }
 
-function getModel(modelName) {
+function getClientForKey(apiKey) {
+  if (!apiKey) throw notConfigured();
+  let c = clientCache.get(apiKey);
+  if (c) return c;
+  c = new GoogleGenerativeAI(apiKey);
+  clientCache.set(apiKey, c);
+  return c;
+}
+
+function getModelForKey(apiKey, modelName) {
   const name = (typeof modelName === 'string' && MODEL_NAME_RE.test(modelName))
     ? modelName : DEFAULT_MODEL;
-  let inst = modelCache.get(name);
+  const cacheKey = apiKey + '|' + name;
+  let inst = modelCache.get(cacheKey);
   if (inst) return inst;
-  inst = getClient().getGenerativeModel({ model: name });
-  modelCache.set(name, inst);
+  inst = getClientForKey(apiKey).getGenerativeModel({ model: name });
+  modelCache.set(cacheKey, inst);
   return inst;
 }
 
@@ -85,7 +93,8 @@ exports.parseEvent = async (req, res, next) => {
     if (!text) return res.status(400).json({ error: 'TEXT_REQUIRED' });
     if (text.length > 8000) return res.status(413).json({ error: 'TEXT_TOO_LONG' });
 
-    const model = getModel(resolveModelName(req.body));
+    const apiKey = await aiKeys.resolveActiveKey(req.user.id);
+    const model = getModelForKey(apiKey, resolveModelName(req.body));
     const result = await model.generateContent({
       contents: [{
         role: 'user',
@@ -265,7 +274,8 @@ exports.searchRewards = async (req, res, next) => {
       return res.json({ ...hit.data, cached: true });
     }
 
-    const model = getModel(modelName);
+    const apiKey = await aiKeys.resolveActiveKey(req.user.id);
+    const model = getModelForKey(apiKey, modelName);
     const buildPrompt = (sys) => `${sys}\n\n=== 查詢關鍵字 ===\n${query}\n\n=== 已記錄的回饋活動清單 ===\n${corpus}`;
 
     let raw = '';
@@ -329,7 +339,7 @@ exports.searchRewards = async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────
 
 const MODELS_TTL = 60 * 60 * 1000;
-let modelsListCache = null; // { at, list }
+const modelsListCacheByKey = new Map(); // apiKey -> { at, list }
 
 const FALLBACK_MODELS = [
   { name: 'gemini-3.5-pro',   displayName: 'Gemini 3.5 Pro',   description: '最強推理' },
@@ -359,16 +369,17 @@ function isUsableGeminiModel(name) {
 }
 
 exports.listModels = async (req, res) => {
-  if (modelsListCache && Date.now() - modelsListCache.at < MODELS_TTL) {
-    return res.json({ models: modelsListCache.list, default: DEFAULT_MODEL, cached: true });
-  }
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) {
+  const apiKey = await aiKeys.resolveActiveKey(req.user.id);
+  if (!apiKey) {
     return res.json({ models: FALLBACK_MODELS, default: DEFAULT_MODEL, fallback: true });
+  }
+  const hit = modelsListCacheByKey.get(apiKey);
+  if (hit && Date.now() - hit.at < MODELS_TTL) {
+    return res.json({ models: hit.list, default: DEFAULT_MODEL, cached: true });
   }
   try {
     const r = await fetch(
-      'https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=' + encodeURIComponent(key)
+      'https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=' + encodeURIComponent(apiKey)
     );
     if (!r.ok) throw new Error('upstream ' + r.status);
     const j = await r.json();
@@ -382,7 +393,7 @@ exports.listModels = async (req, res) => {
       }))
       .filter((m) => isUsableGeminiModel(m.name))
       .sort((a, b) => modelScore(b.name) - modelScore(a.name));
-    modelsListCache = { at: Date.now(), list };
+    modelsListCacheByKey.set(apiKey, { at: Date.now(), list });
     res.json({ models: list, default: DEFAULT_MODEL });
   } catch (err) {
     logger.warn('listModels failed, returning fallback', { err: err.message });
