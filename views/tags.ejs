@@ -19,7 +19,7 @@
           <h2 class="font-semibold text-lg">信用卡 / 銀行 / 金融卡</h2>
           <button id="newCardBtn" class="text-xs px-3 py-1.5 rounded-lg bg-brand-600 text-white hover:bg-brand-700">+ 新增</button>
         </div>
-        <div id="cardList" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div id="cardList" class="space-y-6">
           <div class="text-sm text-slate-400" data-loading>載入中…</div>
         </div>
       </div>
@@ -69,24 +69,25 @@
             <input name="issuer" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
           </label>
         </div>
-        <div class="grid grid-cols-2 gap-3">
-          <label class="block">
-            <span class="text-xs text-slate-500">卡號末四碼</span>
-            <input name="lastFour" maxlength="4" pattern="[0-9]{0,4}" placeholder="1234" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          </label>
-          <label class="block">
-            <span class="text-xs text-slate-500">卡片組織</span>
-            <select name="network" class="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">
-              <option value="">未指定</option>
-              <option value="visa">VISA</option>
-              <option value="mastercard">Mastercard</option>
-              <option value="jcb">JCB</option>
-              <option value="amex">AMEX</option>
-              <option value="unionpay">銀聯</option>
-              <option value="other">其他</option>
-            </select>
-          </label>
-        </div>
+        <label class="block">
+          <span class="text-xs text-slate-500">卡號 (13-19 碼)</span>
+          <input name="pan" inputmode="numeric" autocomplete="off" spellcheck="false"
+                 placeholder="1234 5678 9012 3456"
+                 class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono tracking-wider" />
+          <span class="text-[10px] text-slate-400 mt-1 block">以 AES-256-GCM 加密儲存；平常只顯示末四碼。編輯時留空可保留原本卡號。</span>
+        </label>
+        <label class="block">
+          <span class="text-xs text-slate-500">卡片組織</span>
+          <select name="network" class="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">
+            <option value="">未指定</option>
+            <option value="visa">VISA</option>
+            <option value="mastercard">Mastercard</option>
+            <option value="jcb">JCB</option>
+            <option value="amex">AMEX</option>
+            <option value="unionpay">銀聯</option>
+            <option value="other">其他</option>
+          </select>
+        </label>
         <label class="block">
           <span class="text-xs text-slate-500">卡面圖片 (選填，無則使用漸層)</span>
           <input name="image" type="file" accept="image/*" class="mt-1 block text-sm" />

@@ -29,6 +29,7 @@ const upload = multer({
 const router = express.Router();
 
 router.get('/cards', ctrl.listCards);
+router.get('/cards/:id/pan', ctrl.getCardPan);
 router.post('/cards', upload.single('image'), ctrl.createCard);
 router.put('/cards/:id', upload.single('image'), ctrl.updateCard);
 router.delete('/cards/:id', ctrl.deleteCard);

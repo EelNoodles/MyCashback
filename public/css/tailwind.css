@@ -140,6 +140,33 @@
   .credit-card--bank { background: linear-gradient(135deg, #312e81 0%, #1e1b4b 50%, #4338ca 100%); }
   .credit-card--other { background: linear-gradient(135deg, #44403c 0%, #1c1917 50%, #57534e 100%); }
 
+  /* Overlay copy-PAN button sitting on top of a full credit card */
+  .credit-card__copy {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    z-index: 2;
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    color: rgba(255, 255, 255, 0.85);
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 8px;
+    backdrop-filter: blur(4px);
+    cursor: pointer;
+    transition: background 0.15s ease, transform 0.15s ease;
+  }
+  .credit-card__copy:hover {
+    background: rgba(255, 255, 255, 0.22);
+    color: #fff;
+    transform: scale(1.05);
+  }
+  .credit-card__copy:active {
+    transform: scale(0.95);
+  }
+
   /* Mini card preview (for use inside event cards / chips) */
   .credit-card-mini {
     display: inline-flex;
