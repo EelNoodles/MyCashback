@@ -20,6 +20,11 @@ module.exports = (sequelize, DataTypes) => {
     },
     issuer: { type: DataTypes.STRING(120), allowNull: true, comment: '發卡銀行' },
     lastFour: { type: DataTypes.STRING(4), allowNull: true, comment: '卡號末四碼' },
+    pan: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: 'AES-256-GCM 加密後的完整卡號 (base64)，供複製使用；讀取端點需另行提供解密'
+    },
     network: {
       type: DataTypes.ENUM('visa', 'mastercard', 'jcb', 'amex', 'unionpay', 'other'),
       allowNull: true,
