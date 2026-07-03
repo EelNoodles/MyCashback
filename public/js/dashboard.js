@@ -12,6 +12,22 @@
     amex: 'AMEX', unionpay: 'UP', other: ''
   };
   const CYCLE_LABELS = { weekly: '本週', biweekly: '本雙週', monthly: '本月' };
+  const SPEND_PREFIX = { weekly: '本週', biweekly: '本雙週', monthly: '本月', none: '活動內' };
+
+  // Percent + reward-cap → how much can be spent in one cycle before further
+  // spending stops earning cashback. Null if either input is missing.
+  function calcMaxUsefulSpend(ev) {
+    const pct = Number(ev.cashbackPercent);
+    const cap = Number(ev.maxReward);
+    if (!(pct > 0) || !(cap > 0)) return null;
+    return cap * 100 / pct;
+  }
+  function maxSpendCalloutHtml(ev) {
+    const s = calcMaxUsefulSpend(ev);
+    if (s == null) return '';
+    const prefix = SPEND_PREFIX[ev.cycleType || 'none'] || '活動內';
+    return `<div class="mt-2 text-[11px] bg-emerald-50 border border-emerald-100 rounded-lg px-2 py-1 text-emerald-800 flex items-center gap-1"><span aria-hidden="true">🎯</span><span><strong>${prefix}最高消費</strong> NT$${A.fmtNumber(Math.ceil(s))} 拿滿回饋</span></div>`;
+  }
 
   function getNextResetDate(today, cycleType, anchorDay) {
     const d = new Date(today);
@@ -130,7 +146,8 @@
           <div class="text-[10px] text-slate-400 mt-1">${eventLeftStr}</div>
           ${cycleHtml}
         </div>
-      </div>`;
+      </div>
+      ${maxSpendCalloutHtml(ev)}`;
     
     // Open details on click (ignore if clicked on the sourceUrl link)
     card.addEventListener('click', (e) => {
@@ -150,6 +167,7 @@
         <div class="mb-2"><strong>回饋比例：</strong> ${ev.cashbackPercent ? ev.cashbackPercent + '%' : (ev.cashbackFixed ? '+' + A.fmtNumber(ev.cashbackFixed) : '—')}</div>
         <div class="mb-2"><strong>最低門檻：</strong> ${ev.minimumSpend != null ? A.fmtNumber(ev.minimumSpend) : '—'}</div>
         <div class="mb-2"><strong>回饋上限：</strong> ${ev.maxReward != null ? A.fmtNumber(ev.maxReward) : '—'}</div>
+        ${(() => { const s = calcMaxUsefulSpend(ev); if (s == null) return ''; const prefix = SPEND_PREFIX[ev.cycleType || 'none'] || '活動內'; return `<div class="mb-2"><strong>${prefix}最高消費：</strong> <span class="text-emerald-700 font-semibold">NT$${A.fmtNumber(Math.ceil(s))}</span> 即拿滿回饋</div>`; })()}
         <div class="mb-2"><strong>適用卡片/支付：</strong> <div class="mt-1 flex flex-wrap gap-1">${tagsHtml}</div></div>
         ${ev.description ? `<div class="mb-2"><strong>活動說明：</strong><p class="mt-1 whitespace-pre-wrap">${ev.description}</p></div>` : ''}
         ${ev.sourceUrl ? `<div class="mb-2"><strong>參考連結：</strong> <a href="${ev.sourceUrl}" target="_blank" class="text-brand-600 hover:underline break-all">${ev.sourceUrl}</a></div>` : ''}

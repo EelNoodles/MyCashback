@@ -149,6 +149,30 @@
 
   const CYCLE_LABELS = { weekly: '本週', biweekly: '本雙週', monthly: '本月' };
   const DAY_LABELS = ['', '一', '二', '三', '四', '五', '六', '日'];
+  // Wording prefix for the "cap-reaching spend" callout. Uses '活動內' when
+  // there's no cycle since the reward cap applies over the whole event.
+  const SPEND_PREFIX = { weekly: '本週', biweekly: '本雙週', monthly: '本月', none: '活動內' };
+
+  // Given a percent cashback and a period reward cap, work out how much the
+  // user can spend within one cycle before further spending stops earning
+  // more cashback (the "hit-the-cap" spend). Returns null when either input
+  // is missing so callers can skip the callout entirely.
+  function calcMaxUsefulSpend(ev) {
+    const pct = Number(ev.cashbackPercent);
+    const cap = Number(ev.maxReward);
+    if (!(pct > 0) || !(cap > 0)) return null;
+    return cap * 100 / pct;
+  }
+
+  function maxSpendCalloutHtml(ev) {
+    const s = calcMaxUsefulSpend(ev);
+    if (s == null) return '';
+    const prefix = SPEND_PREFIX[ev.cycleType || 'none'] || '活動內';
+    return `<div class="mt-2 text-xs bg-emerald-50 border border-emerald-100 rounded-lg px-2.5 py-1.5 text-emerald-800 flex items-center gap-1.5">
+      <span aria-hidden="true">🎯</span>
+      <span><strong>${prefix}最高消費</strong> NT$${A.fmtNumber(Math.ceil(s))} 即拿滿回饋（上限 NT$${A.fmtNumber(Number(ev.maxReward))}）</span>
+    </div>`;
+  }
 
   // ─── Renderers ───
   function eventCardEl(ev) {
@@ -235,6 +259,7 @@
         </div>
       </div>
       <div class="mt-2">${countdownHtml}</div>
+      ${maxSpendCalloutHtml(ev)}
       <div class="mt-3 flex flex-wrap gap-1">${cardChips}${pmChips}</div>
       <div class="mt-3 grid grid-cols-3 gap-2 text-xs text-slate-500">
         <div><span class="text-slate-400">最低門檻：</span>${ev.minimumSpend != null ? A.fmtNumber(ev.minimumSpend) : '—'}</div>
@@ -269,6 +294,7 @@
         <div class="mb-2"><strong>回饋比例：</strong> <span class="text-brand-600 font-semibold">${reward}</span></div>
         <div class="mb-2"><strong>最低門檻：</strong> ${ev.minimumSpend != null ? A.fmtNumber(ev.minimumSpend) : '—'}</div>
         <div class="mb-2"><strong>回饋上限：</strong> ${ev.maxReward != null ? A.fmtNumber(ev.maxReward) : '—'}</div>
+        ${(() => { const s = calcMaxUsefulSpend(ev); if (s == null) return ''; const prefix = SPEND_PREFIX[ev.cycleType || 'none'] || '活動內'; return `<div class="mb-2"><strong>${prefix}最高消費：</strong> <span class="text-emerald-700 font-semibold">NT$${A.fmtNumber(Math.ceil(s))}</span> 即拿滿回饋</div>`; })()}
         <div class="mb-2"><strong>適用卡片/支付：</strong> <div class="mt-1 flex flex-wrap gap-1">${tagsHtml}</div></div>
         ${ev.description ? `<div class="mb-2"><strong>活動說明：</strong><p class="mt-1 whitespace-pre-wrap">${ev.description}</p></div>` : ''}
         ${ev.sourceUrl ? `<div class="mb-2"><strong>參考連結：</strong> <a href="${ev.sourceUrl}" target="_blank" class="text-brand-600 hover:underline break-all">${ev.sourceUrl}</a></div>` : ''}
