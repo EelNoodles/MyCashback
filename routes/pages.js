@@ -31,6 +31,10 @@ router.get('/tags', (req, res) => {
   res.render('tags', { title: '卡片與支付方式 - Points & Cashback Hub', active: 'tags' });
 });
 
+router.get('/transactions', (req, res) => {
+  res.render('transactions', { title: '信用卡交易紀錄 - Points & Cashback Hub', active: 'transactions' });
+});
+
 // PWA manifest & service-worker need to live under BASE_URL too
 router.get('/manifest.webmanifest', (req, res) => {
   const baseUrl = (process.env.BASE_URL || '').replace(/\/$/, '') || '/';

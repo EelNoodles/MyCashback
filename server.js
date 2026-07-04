@@ -21,6 +21,8 @@ const cashbackRoutes = require('./routes/cashback');
 const tagRoutes = require('./routes/tags');
 const aiRoutes = require('./routes/ai');
 const fcmRoutes = require('./routes/fcm');
+const transactionRoutes = require('./routes/transactions');
+const ingestRoutes = require('./routes/ingest');
 const pointCtrl = require('./controllers/pointController');
 
 const app = express();
@@ -137,6 +139,11 @@ router.get('/login', optionalAuth, (req, res) => {
   });
 });
 
+// Machine-to-machine ingestion: authenticated by its own API key
+// (middleware/apiKeyAuth.js), intentionally mounted before the session
+// authMiddleware below so external callers never need a browser login.
+router.use('/api/ingest', ingestRoutes);
+
 // All routes below require an authenticated session
 router.use(authMiddleware);
 
@@ -149,6 +156,7 @@ router.use('/api/cashback', cashbackRoutes);
 router.use('/api/tags', tagRoutes);
 router.use('/api/ai', aiRoutes);
 router.use('/api/fcm', fcmRoutes);
+router.use('/api/transactions', transactionRoutes);
 router.get('/api/expiries/alerts', pointCtrl.listAlerts);
 
 // Mount router with optional BASE_URL prefix

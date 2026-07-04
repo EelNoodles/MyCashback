@@ -50,3 +50,14 @@ exports.maskKey = (k) => {
   if (s.length <= 8) return '••••';
   return s.slice(0, 4) + '…' + s.slice(-4);
 };
+
+/**
+ * One-way SHA-256 hex digest, used to store lookup-only hashes of
+ * self-issued API tokens (the plaintext token is never persisted).
+ */
+exports.sha256Hex = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
+
+/**
+ * Generates a self-issued bearer token: "<prefix>_<43 url-safe base64 chars>".
+ */
+exports.genToken = (prefix) => `${prefix}_${crypto.randomBytes(32).toString('base64url')}`;

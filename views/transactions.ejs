@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <%- include('partials/head', { title: title }) %>
+</head>
+<body class="min-h-screen bg-slate-50 text-slate-800">
+  <%- include('partials/nav', { active: active }) %>
+
+  <main class="max-w-6xl mx-auto px-4 py-6 space-y-6">
+    <header class="flex items-center justify-between gap-3 flex-wrap">
+      <div>
+        <h1 class="text-2xl font-semibold">信用卡交易紀錄</h1>
+        <p class="text-sm text-slate-500">記帳系統回報的刷卡紀錄，用來累計回饋活動週期消費、判斷是否額滿</p>
+      </div>
+      <div class="flex gap-2 flex-wrap">
+        <button id="apiKeysBtn" class="px-3 py-2 text-sm rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50">🔑 API 金鑰 / 串接說明</button>
+        <button id="newTxnBtn" class="px-3 py-2 text-sm rounded-lg bg-brand-600 text-white hover:bg-brand-700">+ 手動新增</button>
+      </div>
+    </header>
+
+    <!-- Filters -->
+    <section class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 space-y-3">
+      <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+        <label class="block md:col-span-2">
+          <span class="text-xs text-slate-500">搜尋備註</span>
+          <input id="qInput" type="search" placeholder="例如：全聯、加油"
+                 class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        </label>
+        <label class="block">
+          <span class="text-xs text-slate-500">卡片</span>
+          <select id="cardFilter" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            <option value="">全部</option>
+          </select>
+        </label>
+        <label class="block">
+          <span class="text-xs text-slate-500">支付方式</span>
+          <select id="pmFilter" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            <option value="">全部</option>
+            <option value="none">未使用電子支付</option>
+          </select>
+        </label>
+        <label class="block">
+          <span class="text-xs text-slate-500">來源</span>
+          <select id="sourceFilter" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            <option value="">全部</option>
+            <option value="api">API 回報</option>
+            <option value="manual">手動新增</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <!-- Results -->
+    <section class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50 text-slate-500 text-xs">
+            <tr>
+              <th class="text-left px-4 py-2.5 font-medium">交易時間</th>
+              <th class="text-left px-4 py-2.5 font-medium">卡片</th>
+              <th class="text-left px-4 py-2.5 font-medium">支付方式</th>
+              <th class="text-right px-4 py-2.5 font-medium">金額</th>
+              <th class="text-left px-4 py-2.5 font-medium">備註</th>
+              <th class="text-left px-4 py-2.5 font-medium">來源</th>
+              <th class="text-right px-4 py-2.5 font-medium">操作</th>
+            </tr>
+          </thead>
+          <tbody id="txnRows">
+            <tr><td colspan="7" class="px-4 py-6 text-center text-slate-400">載入中…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="pager" class="flex items-center justify-between px-4 py-3 border-t border-slate-100 text-xs text-slate-500"></div>
+    </section>
+  </main>
+
+  <!-- Modal: transaction form (manual add/edit) -->
+  <div id="txnModal" class="hidden fixed inset-0 z-40 bg-black/40 grid place-items-center px-3 overflow-y-auto py-6">
+    <div class="bg-white w-full max-w-md rounded-2xl shadow-xl p-5 animate-slide-up">
+      <div class="flex items-center justify-between">
+        <h3 class="text-lg font-semibold" id="txnModalTitle">手動新增交易</h3>
+        <button type="button" data-dismiss="txnModal" class="text-slate-400 hover:text-slate-600">✕</button>
+      </div>
+
+      <form id="txnForm" class="mt-3 space-y-3">
+        <input type="hidden" name="id" />
+        <label class="block">
+          <span class="text-xs text-slate-500">卡片 <span class="text-rose-500">*</span></span>
+          <select name="cardId" required class="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"></select>
+        </label>
+        <label class="block">
+          <span class="text-xs text-slate-500">支付方式（留空 = 未使用電子支付）</span>
+          <select name="paymentMethodId" class="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">
+            <option value="">未使用電子支付</option>
+          </select>
+        </label>
+        <div class="grid grid-cols-2 gap-3">
+          <label class="block">
+            <span class="text-xs text-slate-500">金額 <span class="text-rose-500">*</span></span>
+            <input name="amount" type="number" step="0.01" min="0.01" required
+                   class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          </label>
+          <label class="block">
+            <span class="text-xs text-slate-500">交易時間 <span class="text-rose-500">*</span></span>
+            <input name="transactionAt" type="datetime-local" required
+                   class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          </label>
+        </div>
+        <label class="block">
+          <span class="text-xs text-slate-500">備註</span>
+          <input name="note" maxlength="255" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        </label>
+
+        <div id="txnFormError" class="hidden text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2"></div>
+
+        <div class="flex justify-end gap-2 pt-1">
+          <button type="button" data-dismiss="txnModal" class="px-3 py-2 text-sm rounded-lg border border-slate-300">取消</button>
+          <button id="deleteTxnBtn" type="button" class="hidden px-3 py-2 text-sm rounded-lg border border-rose-300 text-rose-600">刪除</button>
+          <button type="submit" class="px-3 py-2 text-sm rounded-lg bg-brand-600 text-white hover:bg-brand-700">
+            <span data-state="idle">儲存</span><span data-state="loading" class="hidden">儲存中…</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: API keys + integration docs -->
+  <div id="apiKeysModal" class="hidden fixed inset-0 z-40 bg-black/40 grid place-items-center px-3 overflow-y-auto py-6">
+    <div class="bg-white w-full max-w-2xl rounded-2xl shadow-xl p-5 animate-slide-up">
+      <div class="flex items-center justify-between">
+        <h3 class="text-lg font-semibold">API 金鑰 / 串接說明</h3>
+        <button type="button" data-dismiss="apiKeysModal" class="text-slate-400 hover:text-slate-600">✕</button>
+      </div>
+      <p class="text-xs text-slate-500 mt-1">讓你的記帳系統在每筆信用卡交易發生時呼叫本 API，系統會自動累計各回饋活動當前週期的消費。</p>
+
+      <ul id="apiKeysList" class="mt-4 space-y-2"></ul>
+      <div id="apiKeysEmpty" class="hidden text-xs text-slate-400 mt-3">尚未建立任何金鑰。</div>
+      <div id="apiKeysError" class="hidden mt-2 text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2"></div>
+
+      <!-- One-time token reveal -->
+      <div id="newTokenBox" class="hidden mt-3 text-xs bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2.5 text-emerald-800">
+        <div class="font-semibold mb-1">新金鑰已建立，請立即複製 — 離開後將無法再次查看：</div>
+        <div class="flex items-center gap-2">
+          <code id="newTokenValue" class="flex-1 break-all bg-white/60 rounded px-2 py-1 font-mono"></code>
+          <button type="button" id="copyTokenBtn" class="px-2 py-1 rounded border border-emerald-300 hover:bg-emerald-100 flex-shrink-0">複製</button>
+        </div>
+      </div>
+
+      <form id="apiKeyAddForm" class="mt-4 border-t border-slate-100 pt-4 flex items-end gap-2">
+        <label class="block flex-1">
+          <span class="text-xs text-slate-500">名稱</span>
+          <input name="name" required maxlength="120" placeholder="例：個人記帳系統"
+                 class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        </label>
+        <button type="submit" class="px-3 py-2 text-sm rounded-lg bg-brand-600 text-white hover:bg-brand-700 whitespace-nowrap">
+          <span data-state="idle">＋ 新增金鑰</span><span data-state="loading" class="hidden">建立中…</span>
+        </button>
+      </form>
+      <div id="apiKeyAddError" class="hidden mt-2 text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2"></div>
+
+      <!-- Inline API docs -->
+      <div class="mt-5 border-t border-slate-100 pt-4 space-y-3 text-xs">
+        <div class="font-semibold text-slate-700 text-sm">API 規格</div>
+        <div>
+          <span class="inline-block px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-mono font-semibold">POST</span>
+          <code class="ml-1 font-mono" id="ingestUrl"><%= url('/api/ingest/card-transactions') %></code>
+        </div>
+        <div>
+          <div class="text-slate-500 mb-1">Header</div>
+          <pre class="bg-slate-50 border border-slate-200 rounded-lg p-2.5 overflow-x-auto"><code>Content-Type: application/json
+Authorization: Bearer &lt;你的 API 金鑰&gt;</code></pre>
+        </div>
+        <div>
+          <div class="text-slate-500 mb-1">Body（JSON）</div>
+          <pre class="bg-slate-50 border border-slate-200 rounded-lg p-2.5 overflow-x-auto"><code>{
+  "cardName": "玉山 Pi 卡",           // 必填，需與「卡片與支付方式」中的名稱完全相同
+  "paymentMethodName": "LINE Pay",   // 選填；沒用電子支付就省略或傳 null / ""
+  "amount": 1280,                    // 必填，大於 0
+  "transactionAt": "2026-07-04T13:05:00+08:00", // 必填，ISO 8601 建議帶時區
+  "note": "全聯",                    // 選填
+  "externalRef": "bookkeeping-8831"  // 選填，記帳系統自己的交易 ID，重送同一筆不會產生重複
+}</code></pre>
+        </div>
+        <div>
+          <div class="text-slate-500 mb-1">回應</div>
+          <ul class="list-disc pl-4 space-y-0.5 text-slate-600">
+            <li><strong>201</strong> 新增成功 / <strong>200</strong> externalRef 已存在，回傳原紀錄（可安全重送）</li>
+            <li><strong>401</strong> <code>UNAUTHORIZED</code> / <code>INVALID_API_KEY</code> — 金鑰缺漏或錯誤</li>
+            <li><strong>400</strong> <code>CARD_NAME_REQUIRED</code> / <code>AMOUNT_INVALID</code> / <code>TRANSACTION_AT_INVALID</code></li>
+            <li><strong>422</strong> <code>CARD_NOT_FOUND</code> / <code>PAYMENT_METHOD_NOT_FOUND</code> — 名稱對不上任何已建立的卡片/支付方式（附 <code>knownCards</code> / <code>knownPaymentMethods</code> 清單）；請先到「卡片與支付方式」用相同名稱建立</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="flex justify-end mt-4">
+        <button type="button" data-dismiss="apiKeysModal" class="px-3 py-2 text-sm rounded-lg border border-slate-300">關閉</button>
+      </div>
+    </div>
+  </div>
+
+  <%- include('partials/footer') %>
+  <script src="<%= asset('/js/transactions.js') %>"></script>
+</body>
+</html>
