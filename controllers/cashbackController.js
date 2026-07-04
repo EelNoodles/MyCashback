@@ -7,6 +7,7 @@ const {
   Card,
   PaymentMethod
 } = require('../models');
+const { computeEventUsage } = require('../services/cashbackCycleService');
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -110,9 +111,22 @@ exports.list = async (req, res, next) => {
       events = Array.from(byId.values());
     }
 
-    res.json(events);
+    res.json(await withUsage(events));
   } catch (err) { next(err); }
 };
+
+// Attaches actual current-cycle spend (from CardTransaction records) onto
+// each event as `usage`, so the UI can show real "已刷多少 / 還剩多少" instead
+// of the purely theoretical max-useful-spend estimate.
+async function withUsage(events) {
+  const list = Array.isArray(events) ? events : [events];
+  const withData = await Promise.all(list.map(async (ev) => {
+    const json = ev.toJSON();
+    json.usage = await computeEventUsage(ev);
+    return json;
+  }));
+  return Array.isArray(events) ? withData : withData[0];
+}
 
 // GET /api/cashback/:id
 exports.get = async (req, res, next) => {
@@ -122,7 +136,7 @@ exports.get = async (req, res, next) => {
       include: eventInclude()
     });
     if (!ev) return res.status(404).json({ error: 'NOT_FOUND' });
-    res.json(ev);
+    res.json(await withUsage(ev));
   } catch (err) { next(err); }
 };
 
@@ -170,6 +184,7 @@ function parsePayload(body) {
     cycleAnchorDay: cycleAnchorDay === '' || cycleAnchorDay === null || cycleAnchorDay === undefined
       ? null
       : parseInt(cycleAnchorDay, 10) || null,
+    matchUnspecifiedPayment: !!body.matchUnspecifiedPayment,
     note: note || null
   };
 
@@ -211,7 +226,7 @@ exports.create = async (req, res, next) => {
     });
 
     const full = await CashbackEvent.findByPk(ev.id, { include: eventInclude() });
-    res.status(201).json(full);
+    res.status(201).json(await withUsage(full));
   } catch (err) { next(err); }
 };
 
@@ -249,7 +264,7 @@ exports.update = async (req, res, next) => {
     });
 
     const full = await CashbackEvent.findByPk(ev.id, { include: eventInclude() });
-    res.json(full);
+    res.json(await withUsage(full));
   } catch (err) { next(err); }
 };
 

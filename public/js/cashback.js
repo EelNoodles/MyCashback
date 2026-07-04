@@ -174,6 +174,34 @@
     </div>`;
   }
 
+  // Real usage (from actual reported card transactions), computed server-side
+  // in cashbackCycleService. Falls back to the theoretical estimate above when
+  // the event has no linked cards to match transactions against.
+  function usageCalloutHtml(ev) {
+    const u = ev.usage;
+    if (!u) return maxSpendCalloutHtml(ev);
+
+    const prefix = SPEND_PREFIX[ev.cycleType || 'none'] || '活動內';
+    let body = `<div class="flex items-center justify-between gap-2">
+      <span>${prefix}已刷 <strong>NT$${A.fmtNumber(u.usedAmount)}</strong>${u.txnCount ? `（${u.txnCount} 筆）` : ''}</span>
+    </div>`;
+
+    if (u.cap != null) {
+      if (u.capReached) {
+        body += `<div class="mt-1 font-medium text-rose-600">🎉 本${prefix === '活動內' ? '活動' : prefix}已達回饋上限 NT$${A.fmtNumber(u.cap)}</div>`;
+      } else if (u.remainingCapAmount != null) {
+        body += `<div class="mt-1 text-emerald-700">🎯 還可刷 <strong>NT$${A.fmtNumber(Math.ceil(u.remainingCapAmount))}</strong> 即達上限</div>`;
+      } else if (u.remainingCapTransactions != null) {
+        body += `<div class="mt-1 text-emerald-700">🎯 還可有 <strong>${A.fmtNumber(u.remainingCapTransactions)}</strong> 筆符合門檻的交易即達上限</div>`;
+      }
+      const pct = u.estimatedReward != null ? Math.max(0, Math.min(100, (u.estimatedReward / u.cap) * 100)) : 0;
+      const barColor = pct >= 100 ? 'progress-bar__fill--rose' : 'progress-bar__fill--brand';
+      body += `<div class="mt-1.5 progress-bar"><div class="${barColor} progress-bar__fill" style="width:${pct.toFixed(1)}%"></div></div>`;
+    }
+
+    return `<div class="mt-2 text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-slate-700">${body}</div>`;
+  }
+
   // ─── Renderers ───
   function eventCardEl(ev) {
     const card = document.createElement('div');
@@ -259,7 +287,7 @@
         </div>
       </div>
       <div class="mt-2">${countdownHtml}</div>
-      ${maxSpendCalloutHtml(ev)}
+      ${usageCalloutHtml(ev)}
       <div class="mt-3 flex flex-wrap gap-1">${cardChips}${pmChips}</div>
       <div class="mt-3 grid grid-cols-3 gap-2 text-xs text-slate-500">
         <div><span class="text-slate-400">最低門檻：</span>${ev.minimumSpend != null ? A.fmtNumber(ev.minimumSpend) : '—'}</div>
@@ -294,7 +322,7 @@
         <div class="mb-2"><strong>回饋比例：</strong> <span class="text-brand-600 font-semibold">${reward}</span></div>
         <div class="mb-2"><strong>最低門檻：</strong> ${ev.minimumSpend != null ? A.fmtNumber(ev.minimumSpend) : '—'}</div>
         <div class="mb-2"><strong>回饋上限：</strong> ${ev.maxReward != null ? A.fmtNumber(ev.maxReward) : '—'}</div>
-        ${(() => { const s = calcMaxUsefulSpend(ev); if (s == null) return ''; const prefix = SPEND_PREFIX[ev.cycleType || 'none'] || '活動內'; return `<div class="mb-2"><strong>${prefix}最高消費：</strong> <span class="text-emerald-700 font-semibold">NT$${A.fmtNumber(Math.ceil(s))}</span> 即拿滿回饋</div>`; })()}
+        <div class="mb-2"><strong>目前週期消費：</strong> <div class="mt-1">${usageCalloutHtml(ev)}</div></div>
         <div class="mb-2"><strong>適用卡片/支付：</strong> <div class="mt-1 flex flex-wrap gap-1">${tagsHtml}</div></div>
         ${ev.description ? `<div class="mb-2"><strong>活動說明：</strong><p class="mt-1 whitespace-pre-wrap">${ev.description}</p></div>` : ''}
         ${ev.sourceUrl ? `<div class="mb-2"><strong>參考連結：</strong> <a href="${ev.sourceUrl}" target="_blank" class="text-brand-600 hover:underline break-all">${ev.sourceUrl}</a></div>` : ''}
@@ -720,6 +748,7 @@
       eventForm.minimumSpend.value = ev.minimumSpend ?? '';
       eventForm.sourceUrl.value = ev.sourceUrl || '';
       eventForm.description.value = ev.description || '';
+      eventForm.matchUnspecifiedPayment.checked = !!ev.matchUnspecifiedPayment;
       (ev.cards || []).forEach((c) => state.selectedCardIds.add(c.id));
       (ev.paymentMethods || []).forEach((p) => state.selectedPmIds.add(p.id));
       deleteEventBtn.classList.remove('hidden');
@@ -766,6 +795,7 @@
         minimumSpend: eventForm.minimumSpend.value || null,
         sourceUrl: eventForm.sourceUrl.value || null,
         description: eventForm.description.value || null,
+        matchUnspecifiedPayment: !!eventForm.matchUnspecifiedPayment.checked,
         cardIds: Array.from(state.selectedCardIds),
         paymentMethodIds: Array.from(state.selectedPmIds)
       };

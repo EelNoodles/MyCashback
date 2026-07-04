@@ -181,8 +181,13 @@
         </label>
 
         <label class="block">
-          <span class="text-xs text-slate-500">綁定支付方式 (可複選)</span>
+          <span class="text-xs text-slate-500">綁定支付方式 (可複選；不選 = 只累計未使用電子支付的交易)</span>
           <div id="pmChips" class="mt-1 flex flex-wrap gap-2 min-h-[40px] border border-slate-200 rounded-lg p-2 bg-slate-50"></div>
+        </label>
+
+        <label class="flex items-start gap-2 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-2.5">
+          <input name="matchUnspecifiedPayment" type="checkbox" class="mt-0.5 rounded border-slate-300" />
+          <span><strong>無指定</strong>：除了上面勾選的支付方式外，未使用電子支付（純刷卡）的交易也一併累計。適用於「刷實體卡或用指定電子支付都算」的活動。</span>
         </label>
 
         <label class="block">

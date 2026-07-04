@@ -47,6 +47,12 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: true,
       comment: 'weekly: 1=Mon~7=Sun, monthly: 1~31 (每月幾號重置)'
     },
+    matchUnspecifiedPayment: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment: '「無指定」：除了 paymentMethods 指定的支付方式外，未使用電子支付的交易也一併累計'
+    },
     note: { type: DataTypes.TEXT, allowNull: true }
   }, {
     tableName: 'cashback_events',
