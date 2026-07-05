@@ -100,6 +100,36 @@ function buildMatchWhere(event, window) {
 }
 
 /**
+ * Same payment-method matching rule as buildMatchWhere(), applied in JS to a
+ * single already-loaded transaction instead of a SQL where-clause.
+ */
+function paymentMatches(event, paymentMethodId) {
+  const pmIds = (event.paymentMethods || []).map((p) => p.id);
+  if (pmIds.length === 0) return paymentMethodId == null;
+  if (paymentMethodId == null) return !!event.matchUnspecifiedPayment;
+  return pmIds.includes(paymentMethodId);
+}
+
+/**
+ * Whether `txn` (a { cardId, paymentMethodId, transactionAt }-shaped record)
+ * counts towards `event` at all — i.e. card + payment method rule match, and
+ * the transaction date falls within the event's overall active period. This
+ * ignores the current-cycle window used by computeEventUsage() since it's
+ * meant to label a single transaction ("which campaigns does this count
+ * towards"), including ones from past cycles.
+ */
+function eventMatchesTransaction(event, txn) {
+  const cardIds = (event.cards || []).map((c) => c.id);
+  if (!cardIds.includes(txn.cardId)) return false;
+  if (!paymentMatches(event, txn.paymentMethodId)) return false;
+
+  const txnAt = new Date(txn.transactionAt);
+  if (event.startDate && txnAt < new Date(`${event.startDate}T00:00:00`)) return false;
+  if (event.endDate && txnAt > endOfDay(`${event.endDate}T00:00:00`)) return false;
+  return true;
+}
+
+/**
  * Computes actual accumulated spend for the event's current cycle and, from
  * that, whether the reward cap has been reached and how much more can still
  * be spent (or how many more qualifying transactions remain) before it does.
@@ -169,5 +199,6 @@ module.exports = {
   getNextResetDate,
   getCurrentCycleWindow,
   buildMatchWhere,
+  eventMatchesTransaction,
   computeEventUsage
 };
