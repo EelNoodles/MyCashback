@@ -5,9 +5,11 @@ const {
   CardTransaction,
   CardTransactionApiKey,
   Card,
-  PaymentMethod
+  PaymentMethod,
+  CashbackEvent
 } = require('../models');
 const { genToken, sha256Hex, maskKey } = require('../config/crypto');
+const { eventMatchesTransaction } = require('../services/cashbackCycleService');
 
 function txnInclude() {
   return [
@@ -35,6 +37,33 @@ function toPublicTxn(row) {
 
 async function reload(row) {
   return CardTransaction.findByPk(row.id, { include: txnInclude() });
+}
+
+// Tags each transaction with the cashback events it counts towards (card +
+// payment method rule match, within the event's active date range), so the
+// management page can show "this transaction qualifies for campaign X".
+async function attachMatchedEvents(userId, txns) {
+  const events = await CashbackEvent.findAll({
+    where: { userId },
+    include: [
+      { model: Card, as: 'cards', through: { attributes: [] }, attributes: ['id'] },
+      { model: PaymentMethod, as: 'paymentMethods', through: { attributes: [] }, attributes: ['id'] }
+    ]
+  });
+
+  for (const txn of txns) {
+    txn.matchedEvents = events
+      .filter((ev) => eventMatchesTransaction(ev, txn))
+      .map((ev) => ({
+        id: ev.id,
+        title: ev.title,
+        cashbackPercent: ev.cashbackPercent,
+        cashbackFixed: ev.cashbackFixed,
+        rewardType: ev.rewardType,
+        maxReward: ev.maxReward
+      }));
+  }
+  return txns;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -160,7 +189,7 @@ exports.list = async (req, res, next) => {
     });
 
     res.json({
-      items: rows.map(toPublicTxn),
+      items: await attachMatchedEvents(req.user.id, rows.map(toPublicTxn)),
       total: count,
       page,
       pageSize
@@ -176,7 +205,8 @@ exports.get = async (req, res, next) => {
       include: txnInclude()
     });
     if (!row) return res.status(404).json({ error: 'NOT_FOUND' });
-    res.json(toPublicTxn(row));
+    const [txn] = await attachMatchedEvents(req.user.id, [toPublicTxn(row)]);
+    res.json(txn);
   } catch (err) { next(err); }
 };
 
@@ -211,7 +241,8 @@ exports.create = async (req, res, next) => {
       source: 'manual'
     });
 
-    res.status(201).json(toPublicTxn(await reload(created)));
+    const [txn] = await attachMatchedEvents(req.user.id, [toPublicTxn(await reload(created))]);
+    res.status(201).json(txn);
   } catch (err) { next(err); }
 };
 
@@ -253,7 +284,8 @@ exports.update = async (req, res, next) => {
     if (note !== undefined) row.note = note ? String(note).trim().slice(0, 255) : null;
 
     await row.save();
-    res.json(toPublicTxn(await reload(row)));
+    const [txn] = await attachMatchedEvents(req.user.id, [toPublicTxn(await reload(row))]);
+    res.json(txn);
   } catch (err) { next(err); }
 };
 
