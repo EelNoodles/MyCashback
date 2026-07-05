@@ -3,7 +3,7 @@
 <head>
   <%- include('partials/head', { title: title }) %>
 </head>
-<body class="min-h-screen bg-slate-50 text-slate-800">
+<body class="min-h-screen bg-slate-50 text-slate-800 pb-20 sm:pb-0">
   <%- include('partials/nav', { active: active }) %>
 
   <main class="max-w-6xl mx-auto px-4 py-6 space-y-6">
@@ -52,23 +52,8 @@
 
     <!-- Results -->
     <section class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-      <div class="overflow-x-auto">
-        <table class="w-full text-sm">
-          <thead class="bg-slate-50 text-slate-500 text-xs">
-            <tr>
-              <th class="text-left px-4 py-2.5 font-medium">交易時間</th>
-              <th class="text-left px-4 py-2.5 font-medium">卡片</th>
-              <th class="text-left px-4 py-2.5 font-medium">支付方式</th>
-              <th class="text-right px-4 py-2.5 font-medium">金額</th>
-              <th class="text-left px-4 py-2.5 font-medium">備註</th>
-              <th class="text-left px-4 py-2.5 font-medium">來源</th>
-              <th class="text-right px-4 py-2.5 font-medium">操作</th>
-            </tr>
-          </thead>
-          <tbody id="txnRows">
-            <tr><td colspan="7" class="px-4 py-6 text-center text-slate-400">載入中…</td></tr>
-          </tbody>
-        </table>
+      <div id="txnList" class="divide-y divide-slate-100">
+        <div class="px-4 py-6 text-center text-slate-400 text-sm">載入中…</div>
       </div>
       <div id="pager" class="flex items-center justify-between px-4 py-3 border-t border-slate-100 text-xs text-slate-500"></div>
     </section>

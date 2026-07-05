@@ -2,7 +2,7 @@
   'use strict';
   const A = window.App;
 
-  const txnRows = document.getElementById('txnRows');
+  const txnList = document.getElementById('txnList');
   const pager = document.getElementById('pager');
   const qInput = document.getElementById('qInput');
   const cardFilter = document.getElementById('cardFilter');
@@ -74,29 +74,59 @@
       + pms.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
   }
 
-  function txnRowEl(t) {
-    const tr = document.createElement('tr');
-    tr.className = 'border-t border-slate-100 hover:bg-slate-50';
-    const cardLabel = t.card ? escapeHtml(t.card.name) : '<span class="text-slate-400">已刪除</span>';
-    const pmLabel = t.paymentMethod
-      ? escapeHtml(t.paymentMethod.name)
-      : '<span class="text-slate-400">未使用電子支付</span>';
-    tr.innerHTML = `
-      <td class="px-4 py-2.5 whitespace-nowrap">${A.fmtDate(t.transactionAt)}</td>
-      <td class="px-4 py-2.5">${cardLabel}</td>
-      <td class="px-4 py-2.5">${pmLabel}</td>
-      <td class="px-4 py-2.5 text-right font-medium">NT$${A.fmtNumber(t.amount)}</td>
-      <td class="px-4 py-2.5 text-slate-500 truncate max-w-[160px]" title="${escapeHtml(t.note || '')}">${escapeHtml(t.note || '—')}</td>
-      <td class="px-4 py-2.5"><span class="text-[10px] px-1.5 py-0.5 rounded-full ${t.source === 'manual' ? 'bg-slate-100 text-slate-600' : 'bg-brand-50 text-brand-700'}">${SOURCE_LABELS[t.source] || t.source}</span></td>
-      <td class="px-4 py-2.5 text-right">
-        <button class="text-brand-600 hover:underline text-xs" data-edit="${t.id}">編輯</button>
-      </td>`;
-    tr.querySelector('[data-edit]').addEventListener('click', () => openTxnModal(t));
-    return tr;
+  function rewardLabel(ev) {
+    if (ev.cashbackPercent != null) {
+      return `${ev.cashbackPercent}% 回饋` + (ev.maxReward != null ? `，上限 NT$${A.fmtNumber(ev.maxReward)}` : '');
+    }
+    if (ev.cashbackFixed != null) {
+      return `+${A.fmtNumber(ev.cashbackFixed)}` + (ev.maxReward != null ? `，上限 NT$${A.fmtNumber(ev.maxReward)}` : '');
+    }
+    return '';
+  }
+
+  // Card-based row (not a <table>) so it stays readable on a phone screen:
+  // the card used and payment method are shown as clear badges up top, and
+  // matched cashback campaigns as chips below, instead of cramming everything
+  // into narrow table columns that force horizontal scrolling.
+  function txnCardEl(t) {
+    const div = document.createElement('div');
+    div.className = 'px-4 py-3 hover:bg-slate-50 cursor-pointer active:bg-slate-100';
+
+    const cardChip = t.card
+      ? (t.card.imageUrl
+        ? `<span class="credit-card-mini"><img class="credit-card-mini__img" src="${A.url(t.card.imageUrl)}" alt="" />${escapeHtml(t.card.name)}</span>`
+        : `<span class="credit-card-mini">💳 ${escapeHtml(t.card.name)}</span>`)
+      : `<span class="credit-card-mini" style="background:#94a3b8">已刪除的卡片</span>`;
+
+    const pmChip = t.paymentMethod
+      ? (t.paymentMethod.imageUrl
+        ? `<span class="pm-badge"><img class="pm-badge__img" src="${A.url(t.paymentMethod.imageUrl)}" alt="" />${escapeHtml(t.paymentMethod.name)}</span>`
+        : `<span class="pm-badge">💸 ${escapeHtml(t.paymentMethod.name)}</span>`)
+      : `<span class="pm-badge text-slate-400">未使用電子支付</span>`;
+
+    const events = t.matchedEvents || [];
+    const eventsHtml = events.length
+      ? events.map((ev) => `<span class="chip chip-active" title="${escapeHtml(rewardLabel(ev))}">🎁 ${escapeHtml(ev.title)}</span>`).join('')
+      : '<span class="text-[11px] text-slate-400">未符合任何回饋活動</span>';
+
+    div.innerHTML = `
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0 flex-1">
+          <div class="flex flex-wrap items-center gap-1.5">${cardChip}${pmChip}</div>
+          <div class="text-xs text-slate-500 mt-1.5">${A.fmtDate(t.transactionAt)}${t.note ? ' · ' + escapeHtml(t.note) : ''}</div>
+        </div>
+        <div class="text-right flex-shrink-0">
+          <div class="text-base font-semibold text-slate-800">NT$${A.fmtNumber(t.amount)}</div>
+          <div class="text-[10px] mt-0.5 inline-block px-1.5 py-0.5 rounded-full ${t.source === 'manual' ? 'bg-slate-100 text-slate-600' : 'bg-brand-50 text-brand-700'}">${SOURCE_LABELS[t.source] || t.source}</div>
+        </div>
+      </div>
+      <div class="mt-2 flex flex-wrap gap-1">${eventsHtml}</div>`;
+    div.addEventListener('click', () => openTxnModal(t));
+    return div;
   }
 
   async function loadTxns() {
-    txnRows.innerHTML = '<tr><td colspan="7" class="px-4 py-6 text-center text-slate-400">載入中…</td></tr>';
+    txnList.innerHTML = '<div class="px-4 py-6 text-center text-slate-400 text-sm">載入中…</div>';
     const params = new URLSearchParams();
     if (state.q) params.set('q', state.q);
     if (state.cardId) params.set('cardId', state.cardId);
@@ -107,11 +137,11 @@
     try {
       const data = await A.jsonFetch(A.api('/transactions?' + params.toString()));
       const items = data.items || [];
-      txnRows.innerHTML = '';
+      txnList.innerHTML = '';
       if (!items.length) {
-        txnRows.innerHTML = '<tr><td colspan="7" class="px-4 py-6 text-center text-slate-400">沒有符合條件的交易紀錄</td></tr>';
+        txnList.innerHTML = '<div class="px-4 py-6 text-center text-slate-400 text-sm">沒有符合條件的交易紀錄</div>';
       } else {
-        items.forEach((t) => txnRows.appendChild(txnRowEl(t)));
+        items.forEach((t) => txnList.appendChild(txnCardEl(t)));
       }
       const totalPages = Math.max(1, Math.ceil(data.total / data.pageSize));
       pager.innerHTML = `
@@ -124,7 +154,7 @@
       document.getElementById('prevPageBtn')?.addEventListener('click', () => { state.page--; loadTxns(); });
       document.getElementById('nextPageBtn')?.addEventListener('click', () => { state.page++; loadTxns(); });
     } catch (err) {
-      txnRows.innerHTML = `<tr><td colspan="7" class="px-4 py-6 text-center text-rose-500">載入失敗：${escapeHtml(err.message)}</td></tr>`;
+      txnList.innerHTML = `<div class="px-4 py-6 text-center text-rose-500 text-sm">載入失敗：${escapeHtml(err.message)}</div>`;
     }
   }
 
