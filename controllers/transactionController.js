@@ -13,7 +13,7 @@ const { eventMatchesTransaction } = require('../services/cashbackCycleService');
 
 function txnInclude() {
   return [
-    { model: Card, as: 'card', attributes: ['id', 'name', 'imageUrl', 'network'] },
+    { model: Card, as: 'card', attributes: ['id', 'name', 'imageUrl', 'network', 'color'] },
     { model: PaymentMethod, as: 'paymentMethod', attributes: ['id', 'name', 'imageUrl'] }
   ];
 }
@@ -23,7 +23,7 @@ function toPublicTxn(row) {
   return {
     id: o.id,
     cardId: o.cardId,
-    card: o.card ? { id: o.card.id, name: o.card.name, imageUrl: o.card.imageUrl, network: o.card.network } : null,
+    card: o.card ? { id: o.card.id, name: o.card.name, imageUrl: o.card.imageUrl, network: o.card.network, color: o.card.color } : null,
     paymentMethodId: o.paymentMethodId,
     paymentMethod: o.paymentMethod ? { id: o.paymentMethod.id, name: o.paymentMethod.name, imageUrl: o.paymentMethod.imageUrl } : null,
     amount: o.amount,
