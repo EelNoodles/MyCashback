@@ -7,6 +7,8 @@
   const cardFilter = document.getElementById('cardFilter');
   const pmFilter = document.getElementById('pmFilter');
   const statusChips = document.querySelectorAll('.status-chip');
+  const groupBySelect = document.getElementById('groupBySelect');
+  const sortBySelect = document.getElementById('sortBySelect');
 
   const newEventBtn = document.getElementById('newEventBtn');
   const aiParseBtn = document.getElementById('aiParseBtn');
@@ -48,6 +50,8 @@
   const aiParseModelSelect = document.getElementById('aiParseModel');
 
   const AI_MODEL_STORAGE_KEY = 'mycashback.aiModel';
+  const GROUP_BY_STORAGE_KEY = 'mycashback.groupBy';
+  const SORT_BY_STORAGE_KEY = 'mycashback.sortBy';
 
   let state = {
     mode: 'normal',
@@ -57,8 +61,11 @@
     q: '',
     cardId: '',
     pmId: '',
+    groupBy: localStorage.getItem(GROUP_BY_STORAGE_KEY) || 'card',
+    sortBy: localStorage.getItem(SORT_BY_STORAGE_KEY) || 'deadline',
     cards: [],
     pms: [],
+    events: [],
     aiResult: null,
     selectedCardIds: new Set(),
     selectedPmIds: new Set()
@@ -397,6 +404,74 @@
     }
   }
 
+  // ─── Grouping / sorting ───
+  // 'deadline' keeps the server's own order (endDate asc, startDate asc, id
+  // desc); the others re-sort client-side since all matching events are
+  // already loaded in one page.
+  function sortEventsList(events, sortBy) {
+    const arr = events.slice();
+    if (sortBy === 'percentDesc' || sortBy === 'percentAsc') {
+      const asc = sortBy === 'percentAsc';
+      arr.sort((a, b) => {
+        const pa = a.cashbackPercent != null ? Number(a.cashbackPercent) : null;
+        const pb = b.cashbackPercent != null ? Number(b.cashbackPercent) : null;
+        if (pa == null && pb == null) return 0;
+        if (pa == null) return 1; // events without a percent (e.g. fixed-amount reward) sort last either way
+        if (pb == null) return -1;
+        return asc ? pa - pb : pb - pa;
+      });
+    } else if (sortBy === 'title') {
+      arr.sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), 'zh-Hant'));
+    }
+    return arr;
+  }
+
+  // An event can belong to multiple groups at once (e.g. linked to 2 cards),
+  // in which case it's simply listed under each of its group headers.
+  function groupLabelsFor(groupBy, ev) {
+    if (groupBy === 'card') {
+      return (ev.cards && ev.cards.length) ? ev.cards.map((c) => c.name) : ['（未指定卡片）'];
+    }
+    if (groupBy === 'paymentMethod') {
+      return (ev.paymentMethods && ev.paymentMethods.length)
+        ? ev.paymentMethods.map((p) => p.name)
+        : ['（未使用電子支付 / 無指定）'];
+    }
+    return [null];
+  }
+
+  function renderEventsList(events) {
+    listEl.innerHTML = '';
+    if (!events.length) {
+      listEl.innerHTML = `<div class="text-sm text-slate-400 col-span-full">沒有符合條件的活動</div>`;
+      return;
+    }
+
+    const sorted = sortEventsList(events, state.sortBy);
+
+    if (state.groupBy === 'none') {
+      for (const ev of sorted) listEl.appendChild(eventCardEl(ev));
+      return;
+    }
+
+    const groups = new Map();
+    for (const ev of sorted) {
+      for (const label of groupLabelsFor(state.groupBy, ev)) {
+        if (!groups.has(label)) groups.set(label, []);
+        groups.get(label).push(ev);
+      }
+    }
+    const labels = Array.from(groups.keys()).sort((a, b) => String(a).localeCompare(String(b), 'zh-Hant'));
+    const icon = state.groupBy === 'card' ? '💳' : '💸';
+    for (const label of labels) {
+      const header = document.createElement('div');
+      header.className = 'col-span-full text-xs font-semibold text-slate-500 uppercase tracking-wide mt-3 mb-1 first:mt-0 flex items-center gap-1.5';
+      header.innerHTML = `<span>${icon} ${escapeHtml(label)}</span><span class="text-slate-300 font-normal normal-case">(${groups.get(label).length})</span>`;
+      listEl.appendChild(header);
+      for (const ev of groups.get(label)) listEl.appendChild(eventCardEl(ev));
+    }
+  }
+
   async function loadEvents() {
     listEl.innerHTML = `<div class="text-sm text-slate-400 col-span-full">載入中…</div>`;
     const params = new URLSearchParams();
@@ -407,12 +482,8 @@
     try {
       listEl.innerHTML = '<div class="text-sm text-slate-400 col-span-full py-6 flex items-center justify-center gap-2"><svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> 載入中…</div>';
       const events = await A.jsonFetch(A.api('/cashback?' + params.toString()));
-      listEl.innerHTML = '';
-      if (!events.length) {
-        listEl.innerHTML = `<div class="text-sm text-slate-400 col-span-full">沒有符合條件的活動</div>`;
-        return;
-      }
-      for (const ev of events) listEl.appendChild(eventCardEl(ev));
+      state.events = events;
+      renderEventsList(events);
     } catch (err) {
       listEl.innerHTML = `<div class="text-sm text-rose-500 col-span-full">載入失敗：${err.message}</div>`;
     }
@@ -726,6 +797,19 @@
     });
   });
 
+  if (groupBySelect) groupBySelect.value = state.groupBy;
+  if (sortBySelect) sortBySelect.value = state.sortBy;
+  groupBySelect?.addEventListener('change', () => {
+    state.groupBy = groupBySelect.value;
+    localStorage.setItem(GROUP_BY_STORAGE_KEY, state.groupBy);
+    renderEventsList(state.events);
+  });
+  sortBySelect?.addEventListener('change', () => {
+    state.sortBy = sortBySelect.value;
+    localStorage.setItem(SORT_BY_STORAGE_KEY, state.sortBy);
+    renderEventsList(state.events);
+  });
+
   // ─── Event modal ───
   function openEventModal(ev) {
     eventForm.reset();
@@ -875,6 +959,10 @@
     eventForm.minimumSpend.value = r.minimumSpend ?? '';
     eventForm.sourceUrl.value = r.sourceUrl || '';
     eventForm.description.value = r.description || '';
+    eventForm.cycleType.value = ['none', 'weekly', 'biweekly', 'monthly'].includes(r.cycleType) ? r.cycleType : 'none';
+    eventForm.cycleAnchorDay.value = r.cycleAnchorDay ?? '';
+    eventForm.matchUnspecifiedPayment.checked = !!r.matchUnspecifiedPayment;
+    updateCycleUI();
 
     // Best-effort fuzzy match cardNames / paymentMethodNames against existing tags
     const lower = (s) => String(s || '').toLowerCase().trim();

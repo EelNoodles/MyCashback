@@ -29,10 +29,30 @@ function toPublicTxn(row) {
     amount: o.amount,
     transactionAt: o.transactionAt,
     note: o.note,
+    latitude: o.latitude != null ? Number(o.latitude) : null,
+    longitude: o.longitude != null ? Number(o.longitude) : null,
     externalRef: o.externalRef,
     source: o.source,
     createdAt: o.createdAt
   };
+}
+
+// Validates an optional { latitude, longitude } pair: both present and in
+// range, or both absent — never just one. Returns { latitude, longitude }
+// (nulls when omitted) or throws a 400-tagged error.
+function parseLatLng(body) {
+  const hasLat = body.latitude !== undefined && body.latitude !== null && body.latitude !== '';
+  const hasLng = body.longitude !== undefined && body.longitude !== null && body.longitude !== '';
+  if (!hasLat && !hasLng) return { latitude: null, longitude: null };
+  if (hasLat !== hasLng) {
+    throw Object.assign(new Error('LOCATION_INCOMPLETE'), { status: 400, code: 'LOCATION_INCOMPLETE' });
+  }
+  const lat = Number(body.latitude);
+  const lng = Number(body.longitude);
+  if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lng) || lng < -180 || lng > 180) {
+    throw Object.assign(new Error('LOCATION_INVALID'), { status: 400, code: 'LOCATION_INVALID' });
+  }
+  return { latitude: lat, longitude: lng };
 }
 
 async function reload(row) {
@@ -88,6 +108,13 @@ exports.ingest = async (req, res, next) => {
       return res.status(400).json({ error: 'TRANSACTION_AT_INVALID', message: 'transactionAt 需為可解析的日期時間字串 (建議 ISO 8601)' });
     }
 
+    let latLng;
+    try {
+      latLng = parseLatLng(req.body || {});
+    } catch (e) {
+      return res.status(400).json({ error: e.code, message: e.code === 'LOCATION_INCOMPLETE' ? 'latitude 與 longitude 需一起提供' : 'latitude/longitude 超出範圍' });
+    }
+
     const externalRefTrim = externalRef != null ? String(externalRef).trim().slice(0, 120) : null;
 
     // Idempotency: replaying the same externalRef returns the existing record.
@@ -132,6 +159,8 @@ exports.ingest = async (req, res, next) => {
       amount: amt,
       transactionAt: txAt,
       note: note ? String(note).trim().slice(0, 255) : null,
+      latitude: latLng.latitude,
+      longitude: latLng.longitude,
       externalRef: externalRefTrim,
       source: 'api'
     });
@@ -220,6 +249,13 @@ exports.create = async (req, res, next) => {
     const txAt = transactionAt ? new Date(transactionAt) : new Date();
     if (Number.isNaN(txAt.getTime())) return res.status(400).json({ error: 'TRANSACTION_AT_INVALID' });
 
+    let latLng;
+    try {
+      latLng = parseLatLng(req.body || {});
+    } catch (e) {
+      return res.status(400).json({ error: e.code });
+    }
+
     const card = await Card.findOne({ where: { id: cardId, userId: req.user.id } });
     if (!card) return res.status(400).json({ error: 'CARD_NOT_FOUND' });
 
@@ -238,6 +274,8 @@ exports.create = async (req, res, next) => {
       amount: amt,
       transactionAt: txAt,
       note: note ? String(note).trim().slice(0, 255) : null,
+      latitude: latLng.latitude,
+      longitude: latLng.longitude,
       source: 'manual'
     });
 
@@ -282,10 +320,48 @@ exports.update = async (req, res, next) => {
       row.transactionAt = txAt;
     }
     if (note !== undefined) row.note = note ? String(note).trim().slice(0, 255) : null;
+    if (req.body.latitude !== undefined || req.body.longitude !== undefined) {
+      try {
+        const latLng = parseLatLng(req.body || {});
+        row.latitude = latLng.latitude;
+        row.longitude = latLng.longitude;
+      } catch (e) {
+        return res.status(400).json({ error: e.code });
+      }
+    }
 
     await row.save();
     const [txn] = await attachMatchedEvents(req.user.id, [toPublicTxn(await reload(row))]);
     res.json(txn);
+  } catch (err) { next(err); }
+};
+
+// GET /api/transactions/locations?cardId=&from=&to=
+// Lightweight, unpaginated feed of geotagged transactions for the map view
+// (markers + heatmap) — deliberately separate from list() since a map wants
+// every matching point at once rather than a page of a table.
+exports.listLocations = async (req, res, next) => {
+  try {
+    const where = {
+      userId: req.user.id,
+      latitude: { [Op.ne]: null },
+      longitude: { [Op.ne]: null }
+    };
+    if (req.query.cardId) where.cardId = parseInt(req.query.cardId, 10);
+    if (req.query.from || req.query.to) {
+      where.transactionAt = {};
+      if (req.query.from) where.transactionAt[Op.gte] = new Date(req.query.from);
+      if (req.query.to) where.transactionAt[Op.lte] = new Date(req.query.to);
+    }
+
+    const rows = await CardTransaction.findAll({
+      where,
+      include: txnInclude(),
+      order: [['transactionAt', 'DESC']],
+      limit: 5000
+    });
+
+    res.json(rows.map(toPublicTxn));
   } catch (err) { next(err); }
 };
 

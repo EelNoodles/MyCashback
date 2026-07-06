@@ -13,6 +13,7 @@
         <p class="text-sm text-slate-500">記帳系統回報的刷卡紀錄，用來累計回饋活動週期消費、判斷是否額滿</p>
       </div>
       <div class="flex gap-2 flex-wrap">
+        <a href="<%= url('/transactions/map') %>" class="px-3 py-2 text-sm rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50">🗺️ 消費地圖</a>
         <button id="apiKeysBtn" class="px-3 py-2 text-sm rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50">🔑 API 金鑰 / 串接說明</button>
         <button id="newTxnBtn" class="px-3 py-2 text-sm rounded-lg bg-brand-600 text-white hover:bg-brand-700">+ 手動新增</button>
       </div>
@@ -95,6 +96,18 @@
           <span class="text-xs text-slate-500">備註</span>
           <input name="note" maxlength="255" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
         </label>
+        <div class="grid grid-cols-2 gap-3">
+          <label class="block">
+            <span class="text-xs text-slate-500">緯度 (選填)</span>
+            <input name="latitude" type="number" step="0.0000001" min="-90" max="90" placeholder="例: 25.0330"
+                   class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          </label>
+          <label class="block">
+            <span class="text-xs text-slate-500">經度 (選填)</span>
+            <input name="longitude" type="number" step="0.0000001" min="-180" max="180" placeholder="例: 121.5654"
+                   class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          </label>
+        </div>
 
         <div id="txnFormError" class="hidden text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2"></div>
 
@@ -163,6 +176,8 @@ Authorization: Bearer &lt;你的 API 金鑰&gt;</code></pre>
   "amount": 1280,                    // 必填，大於 0
   "transactionAt": "2026-07-04T13:05:00+08:00", // 必填，ISO 8601 建議帶時區
   "note": "全聯",                    // 選填
+  "latitude": 25.0330000,            // 選填，消費位置緯度 (-90 ~ 90)；要提供就必須跟 longitude 一起給
+  "longitude": 121.5654000,          // 選填，消費位置經度 (-180 ~ 180)
   "externalRef": "bookkeeping-8831"  // 選填，記帳系統自己的交易 ID，重送同一筆不會產生重複
 }</code></pre>
         </div>
@@ -172,6 +187,7 @@ Authorization: Bearer &lt;你的 API 金鑰&gt;</code></pre>
             <li><strong>201</strong> 新增成功 / <strong>200</strong> externalRef 已存在，回傳原紀錄（可安全重送）</li>
             <li><strong>401</strong> <code>UNAUTHORIZED</code> / <code>INVALID_API_KEY</code> — 金鑰缺漏或錯誤</li>
             <li><strong>400</strong> <code>CARD_NAME_REQUIRED</code> / <code>AMOUNT_INVALID</code> / <code>TRANSACTION_AT_INVALID</code></li>
+            <li><strong>400</strong> <code>LOCATION_INCOMPLETE</code>（只給了 latitude 或 longitude 其中一個）/ <code>LOCATION_INVALID</code>（超出範圍）</li>
             <li><strong>422</strong> <code>CARD_NOT_FOUND</code> / <code>PAYMENT_METHOD_NOT_FOUND</code> — 名稱對不上任何已建立的卡片/支付方式（附 <code>knownCards</code> / <code>knownPaymentMethods</code> 清單）；請先到「卡片與支付方式」用相同名稱建立</li>
           </ul>
         </div>

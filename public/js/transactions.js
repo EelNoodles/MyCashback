@@ -176,6 +176,8 @@
       txnForm.amount.value = t.amount;
       txnForm.transactionAt.value = toLocalInputValue(t.transactionAt);
       txnForm.note.value = t.note || '';
+      txnForm.latitude.value = t.latitude ?? '';
+      txnForm.longitude.value = t.longitude ?? '';
       deleteTxnBtn.classList.remove('hidden');
     } else {
       txnModalTitle.textContent = '手動新增交易';
@@ -199,7 +201,9 @@
         paymentMethodId: txnForm.paymentMethodId.value ? Number(txnForm.paymentMethodId.value) : null,
         amount: Number(txnForm.amount.value),
         transactionAt: new Date(txnForm.transactionAt.value).toISOString(),
-        note: txnForm.note.value || null
+        note: txnForm.note.value || null,
+        latitude: txnForm.latitude.value || null,
+        longitude: txnForm.longitude.value || null
       };
       const id = txnForm.id.value;
       if (id) {

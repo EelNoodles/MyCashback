@@ -35,6 +35,14 @@ router.get('/transactions', (req, res) => {
   res.render('transactions', { title: '信用卡交易紀錄 - Points & Cashback Hub', active: 'transactions' });
 });
 
+router.get('/transactions/map', (req, res) => {
+  res.render('transactions-map', {
+    title: '消費地圖 - Points & Cashback Hub',
+    active: 'transactions',
+    googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || ''
+  });
+});
+
 // PWA manifest & service-worker need to live under BASE_URL too
 router.get('/manifest.webmanifest', (req, res) => {
   const baseUrl = (process.env.BASE_URL || '').replace(/\/$/, '') || '/';
