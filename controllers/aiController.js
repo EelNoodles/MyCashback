@@ -55,6 +55,13 @@ const SYSTEM_PROMPT = `你是一個專門解析中文「信用卡 / 支付回饋
   5. 金額請給整數或浮點數，不要包含貨幣符號或文字。
   6. cardNames / paymentMethodNames 為字串陣列；找不到請回空陣列 []。
   7. rewardType 只能是 "point" / "cash" / "coupon" / "other"。
+  8. cycleType 依文字描述判斷：提到「每週」「每周」用 weekly；「雙週」「兩週」用 biweekly；
+     「每月」「月」用 monthly；完全沒提到重置週期（例如只有活動期間內總上限）就用 none。
+  9. cycleAnchorDay 只在 cycleType 不是 none 時才需要：weekly/biweekly 填「星期幾重置」
+     (1=一 ~ 7=日，沒提到星期幾就填 1)；monthly 填「每月幾號重置」(沒提到就填 1)；
+     cycleType 為 none 時固定填 null。
+  10. matchUnspecifiedPayment 為布林值：只有當文字明確指出「不論是否使用電子支付」「刷實體卡
+      或用 OO 支付都算」這類「除了指定的電子支付外，純刷卡也算」的描述時才填 true，其餘一律 false。
 
 JSON Schema：
 {
@@ -69,6 +76,9 @@ JSON Schema：
   "minimumSpend": number|null,
   "cardNames": string[],
   "paymentMethodNames": string[],
+  "cycleType": "none"|"weekly"|"biweekly"|"monthly",
+  "cycleAnchorDay": number|null,
+  "matchUnspecifiedPayment": boolean,
   "sourceUrl": string|null,
   "note": string|null
 }`;

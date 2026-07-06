@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <%- include('partials/head', { title: title }) %>
+</head>
+<body class="min-h-screen bg-slate-50 text-slate-800 pb-20 sm:pb-0">
+  <%- include('partials/nav', { active: active }) %>
+
+  <main class="max-w-6xl mx-auto px-4 py-6 space-y-4">
+    <header class="flex items-center justify-between gap-3 flex-wrap">
+      <div>
+        <h1 class="text-2xl font-semibold flex items-center gap-2">
+          <a href="<%= url('/transactions') %>" class="text-slate-400 hover:text-slate-600" title="回交易紀錄">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"></path></svg>
+          </a>
+          消費地圖
+        </h1>
+        <p class="text-sm text-slate-500">依交易回報的經緯度，顯示消費地點分布與熱力圖</p>
+      </div>
+    </header>
+
+    <% if (!googleMapsApiKey) { %>
+      <section class="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 text-sm text-slate-600">
+        <p class="font-medium text-slate-700">尚未設定 Google Maps API 金鑰</p>
+        <p class="mt-1 text-slate-500">請在伺服器環境變數設定 <code class="px-1 py-0.5 bg-slate-100 rounded font-mono">GOOGLE_MAPS_API_KEY</code>（需啟用 Maps JavaScript API 與 Visualization Library），設定後重新整理本頁即可看到地圖。</p>
+      </section>
+    <% } else { %>
+      <section class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 space-y-3">
+        <div class="flex flex-wrap items-center gap-3 text-xs">
+          <label class="flex items-center gap-1.5">
+            <span class="text-slate-500">卡片</span>
+            <select id="cardFilter" class="rounded-lg border border-slate-300 px-2 py-1 text-xs bg-white">
+              <option value="">全部</option>
+            </select>
+          </label>
+          <label class="flex items-center gap-1.5">
+            <input id="heatmapToggle" type="checkbox" checked class="rounded border-slate-300" />
+            <span>熱力圖疊加</span>
+          </label>
+          <label class="flex items-center gap-1.5">
+            <input id="markersToggle" type="checkbox" checked class="rounded border-slate-300" />
+            <span>地點標記</span>
+          </label>
+          <span id="mapStats" class="text-slate-400 ml-auto"></span>
+        </div>
+        <div id="map" class="w-full rounded-xl border border-slate-200" style="height: 65vh; min-height: 360px;"></div>
+      </section>
+    <% } %>
+  </main>
+
+  <%- include('partials/footer') %>
+  <% if (googleMapsApiKey) { %>
+    <script>window.GOOGLE_MAPS_API_KEY = <%- JSON.stringify(googleMapsApiKey) %>;</script>
+    <script src="<%= asset('/js/transactions-map.js') %>"></script>
+  <% } %>
+</body>
+</html>

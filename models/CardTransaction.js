@@ -31,6 +31,16 @@ module.exports = (sequelize, DataTypes) => {
       comment: '實際交易時間（由呼叫端提供）'
     },
     note: { type: DataTypes.STRING(255), allowNull: true },
+    latitude: {
+      type: DataTypes.DECIMAL(10, 7),
+      allowNull: true,
+      comment: '消費位置緯度 (-90 ~ 90)，與 longitude 一併提供或一併留空'
+    },
+    longitude: {
+      type: DataTypes.DECIMAL(10, 7),
+      allowNull: true,
+      comment: '消費位置經度 (-180 ~ 180)'
+    },
     externalRef: {
       type: DataTypes.STRING(120),
       allowNull: true,
