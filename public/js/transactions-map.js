@@ -42,27 +42,39 @@
     markers = [];
   }
 
-  // A classic "location pin" glyph (Material Icons "place", 24x24 viewBox),
-  // recolored per-marker instead of the stock red teardrop. Colored by the
-  // card used (each card already has its own colour, e.g. shown as chips
-  // elsewhere in the app) and sized relative to the transaction amount
-  // within whatever's currently loaded, so the map visually distinguishes
-  // both which card and how big a transaction each pin represents.
-  const PIN_PATH = 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z';
+  // A classic "location pin" glyph (Material Icons "place"), recolored per
+  // marker instead of the stock red teardrop. Colored by the card used
+  // (each card already has its own colour, e.g. shown as chips elsewhere in
+  // the app) and sized relative to the transaction amount within whatever's
+  // currently loaded, so the map visually distinguishes both which card and
+  // how big a transaction each pin represents.
+  //
+  // Rendered as an inline-SVG *image* icon (url + scaledSize + anchor in
+  // pixel units) rather than a vector Symbol (path + scale) — the Symbol
+  // form has more cross-version quirks and silently produced no visible
+  // marker at all in testing, whereas a plain Icon is the most standard,
+  // universally-supported way to customise a google.maps.Marker.
+  const iconUrlCache = new Map();
+
+  function pinIconUrl(color) {
+    if (iconUrlCache.has(color)) return iconUrlCache.get(color);
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">'
+      + '<path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z" '
+      + `fill="${color}" stroke="#ffffff" stroke-width="1"/></svg>`;
+    const url = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg);
+    iconUrlCache.set(color, url);
+    return url;
+  }
 
   function markerIcon(t, maxAmount) {
     const color = (t.card && t.card.color) || '#1a76f5';
     const amt = Number(t.amount) || 0;
     const ratio = maxAmount > 0 ? amt / maxAmount : 0;
-    const scale = 1.1 + Math.sqrt(Math.max(0, ratio)) * 0.9; // ~1.1x - 2.0x
+    const size = Math.round(28 + Math.sqrt(Math.max(0, ratio)) * 20); // ~28px - 48px
     return {
-      path: PIN_PATH,
-      fillColor: color,
-      fillOpacity: 1,
-      strokeColor: '#ffffff',
-      strokeWeight: 1.5,
-      scale,
-      anchor: new google.maps.Point(12, 22)
+      url: pinIconUrl(color),
+      scaledSize: new google.maps.Size(size, size),
+      anchor: new google.maps.Point(size / 2, size)
     };
   }
 
