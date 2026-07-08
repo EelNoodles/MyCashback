@@ -33,6 +33,12 @@
   const cycleHint = document.getElementById('cycleHint');
   const requireMerchantMatchInput = document.getElementById('requireMerchantMatchInput');
   const merchantKeywordsWrap = document.getElementById('merchantKeywordsWrap');
+  const merchantAiBtn = document.getElementById('merchantAiBtn');
+  const merchantAiBox = document.getElementById('merchantAiBox');
+  const merchantAiInput = document.getElementById('merchantAiInput');
+  const merchantAiCancelBtn = document.getElementById('merchantAiCancelBtn');
+  const merchantAiAnalyzeBtn = document.getElementById('merchantAiAnalyzeBtn');
+  const merchantAiError = document.getElementById('merchantAiError');
 
   // AI
   const aiInput = document.getElementById('aiInput');
@@ -392,6 +398,51 @@
     merchantKeywordsWrap.classList.toggle('hidden', !requireMerchantMatchInput.checked);
   }
   requireMerchantMatchInput?.addEventListener('change', updateMerchantKeywordsUI);
+
+  // Adds any keywords not already present (case-insensitive) to the textarea,
+  // rather than overwriting it — so re-running the AI analysis (or running it
+  // after manually typing some keywords in) only ever appends.
+  function mergeMerchantKeywords(newKeywords) {
+    const existing = eventForm.merchantKeywords.value.split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
+    const seen = new Set(existing.map((s) => s.toUpperCase()));
+    for (const raw of newKeywords) {
+      const kw = String(raw || '').trim();
+      const norm = kw.toUpperCase();
+      if (norm && !seen.has(norm)) {
+        existing.push(kw);
+        seen.add(norm);
+      }
+    }
+    eventForm.merchantKeywords.value = existing.join('\n');
+  }
+
+  merchantAiBtn?.addEventListener('click', () => {
+    A.showError(merchantAiError, '');
+    merchantAiBox.classList.toggle('hidden');
+  });
+  merchantAiCancelBtn?.addEventListener('click', () => {
+    merchantAiBox.classList.add('hidden');
+    merchantAiInput.value = '';
+    A.showError(merchantAiError, '');
+  });
+  merchantAiAnalyzeBtn?.addEventListener('click', async () => {
+    const text = merchantAiInput.value.trim();
+    if (!text) { merchantAiInput.focus(); return; }
+    A.setLoading(merchantAiAnalyzeBtn, true);
+    A.showError(merchantAiError, '');
+    try {
+      const data = await A.jsonFetch(A.api('/ai/parse-merchants'), {
+        method: 'POST', body: { text, model: state.aiModel || undefined }
+      });
+      mergeMerchantKeywords(Array.isArray(data.keywords) ? data.keywords : []);
+      merchantAiBox.classList.add('hidden');
+      merchantAiInput.value = '';
+    } catch (err) {
+      A.showError(merchantAiError, err.message);
+    } finally {
+      A.setLoading(merchantAiAnalyzeBtn, false);
+    }
+  });
 
   // ─── Loaders ───
   async function loadTags() {
@@ -975,7 +1026,11 @@
     eventForm.cycleType.value = ['none', 'weekly', 'biweekly', 'monthly'].includes(r.cycleType) ? r.cycleType : 'none';
     eventForm.cycleAnchorDay.value = r.cycleAnchorDay ?? '';
     eventForm.matchUnspecifiedPayment.checked = !!r.matchUnspecifiedPayment;
+    const aiKeywords = Array.isArray(r.merchantKeywords) ? r.merchantKeywords.filter(Boolean) : [];
+    eventForm.requireMerchantMatch.checked = !!r.requireMerchantMatch && aiKeywords.length > 0;
+    eventForm.merchantKeywords.value = aiKeywords.join('\n');
     updateCycleUI();
+    updateMerchantKeywordsUI();
 
     // Best-effort fuzzy match cardNames / paymentMethodNames against existing tags
     const lower = (s) => String(s || '').toLowerCase().trim();
