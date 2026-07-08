@@ -214,10 +214,25 @@
             <input id="requireMerchantMatchInput" name="requireMerchantMatch" type="checkbox" class="mt-0.5 rounded border-slate-300" />
             <span><strong>商家限定</strong>：只有交易的備註/卡片/支付方式包含下列關鍵字其中一項，才算入這個活動。適用於「只有特定商家有回饋」的活動（例如全額回饋僅限 CAMA 咖啡）。</span>
           </label>
-          <div id="merchantKeywordsWrap" class="hidden">
+          <div id="merchantKeywordsWrap" class="hidden space-y-2">
             <textarea name="merchantKeywords" rows="3" placeholder="每行一個關鍵字，符合任一即算入，例如：&#10;CAMA&#10;全家"
                       class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
-            <div class="text-[10px] text-slate-400 mt-1">比對時會忽略英文大小寫與空白，交易的備註/卡片/支付方式名稱中只要出現這段文字就算符合。</div>
+            <div class="text-[10px] text-slate-400">比對時會忽略英文大小寫與空白，交易的備註/卡片/支付方式名稱中只要出現這段文字就算符合。</div>
+
+            <div class="border-t border-slate-200 pt-2">
+              <button type="button" id="merchantAiBtn" class="text-xs text-brand-700 border border-brand-300 rounded-lg px-2 py-1 hover:bg-brand-50">✨ 用 AI 分析商家清單填入</button>
+              <div id="merchantAiBox" class="hidden mt-2 space-y-2">
+                <textarea id="merchantAiInput" rows="3" placeholder="貼上商家清單或活動說明文字，例如：全家便利商店、7-ELEVEN、萊爾富...（AI 會整理成關鍵字並加到上面清單）"
+                          class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
+                <div class="flex justify-end gap-2">
+                  <button type="button" id="merchantAiCancelBtn" class="px-2 py-1 text-xs rounded-lg border border-slate-300">取消</button>
+                  <button type="button" id="merchantAiAnalyzeBtn" class="px-2 py-1 text-xs rounded-lg bg-brand-600 text-white hover:bg-brand-700">
+                    <span data-state="idle">分析並加入清單</span><span data-state="loading" class="hidden">分析中…</span>
+                  </button>
+                </div>
+                <div id="merchantAiError" class="hidden text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-2 py-1.5"></div>
+              </div>
+            </div>
           </div>
         </div>
 

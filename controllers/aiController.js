@@ -62,6 +62,12 @@ const SYSTEM_PROMPT = `你是一個專門解析中文「信用卡 / 支付回饋
      cycleType 為 none 時固定填 null。
   10. matchUnspecifiedPayment 為布林值：只有當文字明確指出「不論是否使用電子支付」「刷實體卡
       或用 OO 支付都算」這類「除了指定的電子支付外，純刷卡也算」的描述時才填 true，其餘一律 false。
+  11. requireMerchantMatch 為布林值：只有當文字明確指出「僅限特定商家/店家/通路才有回饋」時才填
+      true，其餘一律 false；若為 false，merchantKeywords 固定回空陣列 []。
+  12. merchantKeywords 為字串陣列：當 requireMerchantMatch 為 true 時，從文字中列出的適用商家
+      各萃取一個能唯一辨識該商家的核心關鍵字，去除地址、分店、標點與多餘敘述（例如「CAMA café
+      台南夏都店」-> "CAMA"；「全家便利商店（信義店）」-> "全家"）；同一商家只保留一個最短又可
+      辨識的關鍵字，不要重複列出同義詞。
 
 JSON Schema：
 {
@@ -79,9 +85,23 @@ JSON Schema：
   "cycleType": "none"|"weekly"|"biweekly"|"monthly",
   "cycleAnchorDay": number|null,
   "matchUnspecifiedPayment": boolean,
+  "requireMerchantMatch": boolean,
+  "merchantKeywords": string[],
   "sourceUrl": string|null,
   "note": string|null
 }`;
+
+const MERCHANT_SYSTEM_PROMPT = `你是台灣「信用卡 / 支付回饋活動」商家清單整理助手。
+使用者會給一段文字（可能是條列的商家名稱清單、或活動說明中提到適用商家的段落）。
+請從中萃取出「適用商家關鍵字」清單，規則：
+  1. 每個關鍵字應該是能唯一辨識該商家的核心名稱片段，去除地址、分店細節、標點符號。
+     例如「CAMA café 台南夏都店」-> "CAMA"；「全家便利商店（信義店）」-> "全家"。
+  2. 同一商家如果同時出現簡稱與全名，只需保留最短、仍可辨識的一個，不要重複列出。
+  3. 忽略跟商家無關的敘述文字（例如回饋 %、日期、金額、活動規則等）。
+  4. 找不到任何商家名稱時回傳空陣列 []。
+  5. 嚴格只輸出 JSON 物件，禁止 Markdown、禁止解釋、禁止程式碼框。
+
+輸出 JSON：{ "keywords": string[] }`;
 
 function safeJsonParse(text) {
   // Strip code fences if the model still ignored instructions.
@@ -131,6 +151,53 @@ exports.parseEvent = async (req, res, next) => {
       return res.status(503).json({ error: err.code, message: err.message });
     }
     logger.error('Gemini parseEvent error', { err: err.message });
+    next(err);
+  }
+};
+
+// POST /api/ai/parse-merchants  body: { text }
+// Follow-up analysis used from the event edit form's "商家限定" section: lets
+// the user paste extra raw text (a merchant list copied from a promo page,
+// more of the original announcement, etc.) at any time — not just once at
+// creation via parseEvent — and get back a clean merchantKeywords array to
+// merge into the field.
+exports.parseMerchants = async (req, res, next) => {
+  try {
+    const text = (req.body && req.body.text || '').toString().trim();
+    if (!text) return res.status(400).json({ error: 'TEXT_REQUIRED' });
+    if (text.length > 4000) return res.status(413).json({ error: 'TEXT_TOO_LONG' });
+
+    const apiKey = await aiKeys.resolveActiveKey(req.user.id);
+    const model = getModelForKey(apiKey, resolveModelName(req.body));
+    const result = await model.generateContent({
+      contents: [{
+        role: 'user',
+        parts: [{ text: `${MERCHANT_SYSTEM_PROMPT}\n\n=== 輸入文字 ===\n${text}` }]
+      }],
+      generationConfig: {
+        temperature: 0.2,
+        responseMimeType: 'application/json'
+      }
+    });
+
+    const raw = result.response && result.response.text ? result.response.text() : '';
+    let parsed;
+    try {
+      parsed = safeJsonParse(raw);
+    } catch (e) {
+      logger.warn('Gemini returned non-JSON for parseMerchants', { raw });
+      return res.status(502).json({ error: 'AI_PARSE_FAILED', raw });
+    }
+
+    const keywords = Array.isArray(parsed && parsed.keywords)
+      ? parsed.keywords.map((k) => String(k).trim()).filter(Boolean).slice(0, 50)
+      : [];
+    res.json({ keywords });
+  } catch (err) {
+    if (err.code === 'GEMINI_NOT_CONFIGURED') {
+      return res.status(503).json({ error: err.code, message: err.message });
+    }
+    logger.error('Gemini parseMerchants error', { err: err.message });
     next(err);
   }
 };

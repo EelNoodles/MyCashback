@@ -8,6 +8,7 @@ const router = express.Router();
 
 router.get('/models', ctrl.listModels);
 router.post('/parse-event', ctrl.parseEvent);
+router.post('/parse-merchants', ctrl.parseMerchants);
 router.post('/search-rewards', ctrl.searchRewards);
 
 router.get('/keys', keys.list);
