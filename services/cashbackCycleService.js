@@ -126,7 +126,59 @@ function eventMatchesTransaction(event, txn) {
   const txnAt = new Date(txn.transactionAt);
   if (event.startDate && txnAt < new Date(`${event.startDate}T00:00:00`)) return false;
   if (event.endDate && txnAt > endOfDay(`${event.endDate}T00:00:00`)) return false;
+  if (event.requireMerchantMatch && !matchMerchantKeyword(event, txn).matched) return false;
   return true;
+}
+
+// ─────────────────────────────────────────────────────────────
+// "商家限定" (merchant match): some campaigns only give cashback at specific
+// merchants. When enabled on an event, a transaction only counts if one of
+// the event's configured keywords appears — case/whitespace-insensitively —
+// somewhere in the transaction's note / card name / payment method name
+// (whichever the bookkeeping system happened to put the merchant name in).
+// ─────────────────────────────────────────────────────────────
+
+function normalizeForMatch(s) {
+  return String(s || '').toUpperCase().replace(/[\s　]+/g, '');
+}
+
+function parseMerchantKeywords(raw) {
+  return String(raw || '')
+    .split(/[\n,]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+// Accepts either the toPublicTxn() shape ({ card: { name }, paymentMethod: { name }, note })
+// or a raw CardTransaction row ({ rawCardName, rawPaymentMethodName, note }).
+function transactionHaystack(txn) {
+  const parts = [
+    txn.note,
+    txn.rawCardName,
+    txn.rawPaymentMethodName,
+    txn.card && txn.card.name,
+    txn.paymentMethod && txn.paymentMethod.name
+  ].filter(Boolean);
+  return normalizeForMatch(parts.join(' '));
+}
+
+/**
+ * Returns { matched, keyword } — `keyword` is the first configured keyword
+ * (original casing, as the user typed it) found within the transaction's
+ * text fields, or null. When the event doesn't require a merchant match at
+ * all, this always reports matched: true / keyword: null.
+ */
+function matchMerchantKeyword(event, txn) {
+  if (!event.requireMerchantMatch) return { matched: true, keyword: null };
+  const keywords = parseMerchantKeywords(event.merchantKeywords);
+  if (!keywords.length) return { matched: false, keyword: null };
+
+  const haystack = transactionHaystack(txn);
+  for (const kw of keywords) {
+    const normKw = normalizeForMatch(kw);
+    if (normKw && haystack.includes(normKw)) return { matched: true, keyword: kw };
+  }
+  return { matched: false, keyword: null };
 }
 
 /**
@@ -140,16 +192,34 @@ async function computeEventUsage(event, now = new Date()) {
   const where = buildMatchWhere(event, window);
   if (!where) return null;
 
-  const totals = await CardTransaction.findOne({
-    where,
-    attributes: [
-      [fn('COALESCE', fn('SUM', col('amount')), 0), 'usedAmount'],
-      [fn('COUNT', col('id')), 'txnCount']
-    ],
-    raw: true
-  });
-  const usedAmount = Number(totals && totals.usedAmount) || 0;
-  const txnCount = Number(totals && totals.txnCount) || 0;
+  let usedAmount;
+  let txnCount;
+  let merchantMatchedRows = null; // only populated when requireMerchantMatch, reused below for minimumSpend filtering
+
+  if (event.requireMerchantMatch) {
+    // Merchant-keyword matching (case/whitespace-insensitive substring search
+    // against note/card/payment-method text) isn't expressible as a single
+    // SQL aggregate, so pull the candidate rows and filter/sum in JS instead.
+    const rows = await CardTransaction.findAll({
+      where,
+      attributes: ['id', 'amount', 'note', 'rawCardName', 'rawPaymentMethodName'],
+      raw: true
+    });
+    merchantMatchedRows = rows.filter((r) => matchMerchantKeyword(event, r).matched);
+    usedAmount = merchantMatchedRows.reduce((sum, r) => sum + Number(r.amount), 0);
+    txnCount = merchantMatchedRows.length;
+  } else {
+    const totals = await CardTransaction.findOne({
+      where,
+      attributes: [
+        [fn('COALESCE', fn('SUM', col('amount')), 0), 'usedAmount'],
+        [fn('COUNT', col('id')), 'txnCount']
+      ],
+      raw: true
+    });
+    usedAmount = Number(totals && totals.usedAmount) || 0;
+    txnCount = Number(totals && totals.txnCount) || 0;
+  }
 
   const cap = event.maxReward != null ? Number(event.maxReward) : null;
   const pct = event.cashbackPercent != null ? Number(event.cashbackPercent) : null;
@@ -170,9 +240,15 @@ async function computeEventUsage(event, now = new Date()) {
     }
   } else if (fixed && fixed > 0) {
     const minSpend = event.minimumSpend != null ? Number(event.minimumSpend) : 0;
-    const qualifyingWhere = { ...where };
-    if (minSpend > 0) qualifyingWhere.amount = { [Op.gte]: minSpend };
-    qualifyingCount = await CardTransaction.count({ where: qualifyingWhere });
+    if (merchantMatchedRows) {
+      qualifyingCount = minSpend > 0
+        ? merchantMatchedRows.filter((r) => Number(r.amount) >= minSpend).length
+        : merchantMatchedRows.length;
+    } else {
+      const qualifyingWhere = { ...where };
+      if (minSpend > 0) qualifyingWhere.amount = { [Op.gte]: minSpend };
+      qualifyingCount = await CardTransaction.count({ where: qualifyingWhere });
+    }
     estimatedReward = qualifyingCount * fixed;
     if (cap != null) {
       capReached = estimatedReward >= cap;
@@ -200,5 +276,6 @@ module.exports = {
   getCurrentCycleWindow,
   buildMatchWhere,
   eventMatchesTransaction,
+  matchMerchantKeyword,
   computeEventUsage
 };

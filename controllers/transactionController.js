@@ -9,7 +9,7 @@ const {
   CashbackEvent
 } = require('../models');
 const { genToken, sha256Hex, maskKey } = require('../config/crypto');
-const { eventMatchesTransaction } = require('../services/cashbackCycleService');
+const { eventMatchesTransaction, matchMerchantKeyword } = require('../services/cashbackCycleService');
 
 function txnInclude() {
   return [
@@ -80,7 +80,8 @@ async function attachMatchedEvents(userId, txns) {
         cashbackPercent: ev.cashbackPercent,
         cashbackFixed: ev.cashbackFixed,
         rewardType: ev.rewardType,
-        maxReward: ev.maxReward
+        maxReward: ev.maxReward,
+        matchedKeyword: ev.requireMerchantMatch ? matchMerchantKeyword(ev, txn).keyword : null
       }));
   }
   return txns;

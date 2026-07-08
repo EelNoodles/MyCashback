@@ -53,6 +53,17 @@ module.exports = (sequelize, DataTypes) => {
       defaultValue: false,
       comment: '「無指定」：除了 paymentMethods 指定的支付方式外，未使用電子支付的交易也一併累計'
     },
+    requireMerchantMatch: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment: '「商家限定」：交易的備註/卡片/支付方式需包含 merchantKeywords 其中一項才算入'
+    },
+    merchantKeywords: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: '商家關鍵字清單（換行或逗號分隔），比對時忽略大小寫與空白'
+    },
     note: { type: DataTypes.TEXT, allowNull: true }
   }, {
     tableName: 'cashback_events',

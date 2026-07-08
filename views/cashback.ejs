@@ -209,6 +209,18 @@
           <span><strong>無指定</strong>：除了上面勾選的支付方式外，未使用電子支付（純刷卡）的交易也一併累計。適用於「刷實體卡或用指定電子支付都算」的活動。</span>
         </label>
 
+        <div class="bg-slate-50 rounded-xl p-3 space-y-2 border border-slate-200">
+          <label class="flex items-start gap-2 text-xs text-slate-600">
+            <input id="requireMerchantMatchInput" name="requireMerchantMatch" type="checkbox" class="mt-0.5 rounded border-slate-300" />
+            <span><strong>商家限定</strong>：只有交易的備註/卡片/支付方式包含下列關鍵字其中一項，才算入這個活動。適用於「只有特定商家有回饋」的活動（例如全額回饋僅限 CAMA 咖啡）。</span>
+          </label>
+          <div id="merchantKeywordsWrap" class="hidden">
+            <textarea name="merchantKeywords" rows="3" placeholder="每行一個關鍵字，符合任一即算入，例如：&#10;CAMA&#10;全家"
+                      class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
+            <div class="text-[10px] text-slate-400 mt-1">比對時會忽略英文大小寫與空白，交易的備註/卡片/支付方式名稱中只要出現這段文字就算符合。</div>
+          </div>
+        </div>
+
         <label class="block">
           <span class="text-xs text-slate-500">原文連結</span>
           <input name="sourceUrl" type="url" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />

@@ -185,6 +185,8 @@ function parsePayload(body) {
       ? null
       : parseInt(cycleAnchorDay, 10) || null,
     matchUnspecifiedPayment: !!body.matchUnspecifiedPayment,
+    requireMerchantMatch: !!body.requireMerchantMatch,
+    merchantKeywords: body.merchantKeywords ? String(body.merchantKeywords).trim().slice(0, 2000) || null : null,
     note: note || null
   };
 
