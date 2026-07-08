@@ -31,6 +31,8 @@
   const cycleAnchorWrap = document.getElementById('cycleAnchorWrap');
   const cycleAnchorLabel = document.getElementById('cycleAnchorLabel');
   const cycleHint = document.getElementById('cycleHint');
+  const requireMerchantMatchInput = document.getElementById('requireMerchantMatchInput');
+  const merchantKeywordsWrap = document.getElementById('merchantKeywordsWrap');
 
   // AI
   const aiInput = document.getElementById('aiInput');
@@ -384,6 +386,12 @@
     }
   }
   eventForm?.cycleType?.addEventListener('change', updateCycleUI);
+
+  // ─── Merchant-match form UX ───
+  function updateMerchantKeywordsUI() {
+    merchantKeywordsWrap.classList.toggle('hidden', !requireMerchantMatchInput.checked);
+  }
+  requireMerchantMatchInput?.addEventListener('change', updateMerchantKeywordsUI);
 
   // ─── Loaders ───
   async function loadTags() {
@@ -833,6 +841,8 @@
       eventForm.sourceUrl.value = ev.sourceUrl || '';
       eventForm.description.value = ev.description || '';
       eventForm.matchUnspecifiedPayment.checked = !!ev.matchUnspecifiedPayment;
+      eventForm.requireMerchantMatch.checked = !!ev.requireMerchantMatch;
+      eventForm.merchantKeywords.value = ev.merchantKeywords || '';
       (ev.cards || []).forEach((c) => state.selectedCardIds.add(c.id));
       (ev.paymentMethods || []).forEach((p) => state.selectedPmIds.add(p.id));
       deleteEventBtn.classList.remove('hidden');
@@ -843,6 +853,7 @@
     }
 
     updateCycleUI();
+    updateMerchantKeywordsUI();
 
     cardChipsBox.innerHTML = '';
     pmChipsBox.innerHTML = '';
@@ -880,6 +891,8 @@
         sourceUrl: eventForm.sourceUrl.value || null,
         description: eventForm.description.value || null,
         matchUnspecifiedPayment: !!eventForm.matchUnspecifiedPayment.checked,
+        requireMerchantMatch: !!eventForm.requireMerchantMatch.checked,
+        merchantKeywords: eventForm.merchantKeywords.value || null,
         cardIds: Array.from(state.selectedCardIds),
         paymentMethodIds: Array.from(state.selectedPmIds)
       };

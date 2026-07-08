@@ -106,7 +106,10 @@
 
     const events = t.matchedEvents || [];
     const eventsHtml = events.length
-      ? events.map((ev) => `<span class="chip chip-active" title="${escapeHtml(rewardLabel(ev))}">🎁 ${escapeHtml(ev.title)}</span>`).join('')
+      ? events.map((ev) => {
+        const keywordSuffix = ev.matchedKeyword ? `（${escapeHtml(ev.matchedKeyword)} 符合）` : '';
+        return `<span class="chip chip-active" title="${escapeHtml(rewardLabel(ev))}">🎁 ${escapeHtml(ev.title)}${keywordSuffix}</span>`;
+      }).join('')
       : '<span class="text-[11px] text-slate-400">未符合任何回饋活動</span>';
 
     div.innerHTML = `
