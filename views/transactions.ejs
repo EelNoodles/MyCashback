@@ -191,6 +191,55 @@ Authorization: Bearer &lt;你的 API 金鑰&gt;</code></pre>
             <li><strong>422</strong> <code>CARD_NOT_FOUND</code> / <code>PAYMENT_METHOD_NOT_FOUND</code> — 名稱對不上任何已建立的卡片/支付方式（附 <code>knownCards</code> / <code>knownPaymentMethods</code> 清單）；請先到「卡片與支付方式」用相同名稱建立</li>
           </ul>
         </div>
+
+        <div class="font-semibold text-slate-700 text-sm pt-2 border-t border-slate-100">查詢卡片與回饋活動（供你自己的工具讀取整理）</div>
+        <div>
+          <span class="inline-block px-1.5 py-0.5 rounded bg-brand-100 text-brand-700 font-mono font-semibold">GET</span>
+          <code class="ml-1 font-mono"><%= url('/api/external/cards') %>?status=active</code>
+        </div>
+        <div>
+          <div class="text-slate-500 mb-1">Header</div>
+          <pre class="bg-slate-50 border border-slate-200 rounded-lg p-2.5 overflow-x-auto"><code>Authorization: Bearer &lt;你的 API 金鑰&gt;</code></pre>
+          <div class="text-[11px] text-slate-400 mt-1">跟上面回報交易用的是同一把金鑰。</div>
+        </div>
+        <div>
+          <div class="text-slate-500 mb-1">Query 參數</div>
+          <ul class="list-disc pl-4 space-y-0.5 text-slate-600">
+            <li><code>status</code>：<code>active</code>（預設，只回進行中的活動）/ <code>expired</code> / <code>all</code></li>
+          </ul>
+        </div>
+        <div>
+          <div class="text-slate-500 mb-1">回應（節錄）</div>
+          <pre class="bg-slate-50 border border-slate-200 rounded-lg p-2.5 overflow-x-auto"><code>{
+  "generatedAt": "2026-07-09T05:17:44.112Z",
+  "cards": [
+    {
+      "id": 1, "name": "玉山 Pi 卡", "kind": "credit",
+      "issuer": "玉山銀行", "network": "mastercard", "color": "hsl(...)",
+      "imageUrl": "https://你的網域/uploads/xxx.png",  // 沒上傳圖片就是 null
+      "events": [
+        {
+          "id": 12, "title": "...", "cashbackPercent": 5, "cashbackFixed": null,
+          "rewardType": "cash", "maxReward": 300, "minimumSpend": null,
+          "startDate": "...", "endDate": "...",
+          "cycleType": "monthly", "cycleAnchorDay": 1,
+          "matchUnspecifiedPayment": true,
+          "requireMerchantMatch": false, "merchantKeywords": [],
+          "paymentMethods": [{ "id": 1, "name": "LINE Pay" }],
+          "sourceUrl": "...",
+          "usage": {
+            "cycleStart": "...", "cycleEnd": "...",
+            "usedAmount": 5500, "txnCount": 3, "estimatedReward": 275,
+            "cap": 300, "capReached": false,
+            "remainingCapAmount": 500,        // 還可刷多少即達上限（回饋%活動）
+            "remainingCapTransactions": null  // 還可有幾筆符合門檻的交易（固定回饋活動）
+          }
+        }
+      ]
+    }
+  ]
+}</code></pre>
+        </div>
       </div>
 
       <div class="flex justify-end mt-4">
