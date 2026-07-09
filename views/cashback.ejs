@@ -161,7 +161,7 @@
 
   <!-- Modal: Event form -->
   <div id="eventModal" class="hidden fixed inset-0 z-40 bg-black/40 grid place-items-center px-3 overflow-y-auto py-6">
-    <div class="bg-white w-full max-w-2xl rounded-2xl shadow-xl p-5 animate-slide-up">
+    <div class="bg-white w-full min-w-0 max-w-2xl rounded-2xl shadow-xl p-5 animate-slide-up">
       <div class="flex items-center justify-between">
         <h3 class="text-lg font-semibold" id="eventModalTitle">新增回饋活動</h3>
         <button type="button" data-dismiss="eventModal" class="text-slate-400 hover:text-slate-600">✕</button>
@@ -330,7 +330,7 @@
 
   <!-- Modal: AI parser -->
   <div id="aiModal" class="hidden fixed inset-0 z-40 bg-black/40 grid place-items-center px-3">
-    <div class="bg-white w-full max-w-xl rounded-2xl shadow-xl p-5 animate-slide-up">
+    <div class="bg-white w-full min-w-0 max-w-xl rounded-2xl shadow-xl p-5 animate-slide-up">
       <div class="flex items-center justify-between">
         <h3 class="text-lg font-semibold">AI 智能活動解析</h3>
         <button type="button" data-dismiss="aiModal" class="text-slate-400 hover:text-slate-600">✕</button>
@@ -359,7 +359,7 @@
 
   <!-- Modal: AI keys -->
   <div id="aiKeysModal" class="hidden fixed inset-0 z-40 bg-black/40 grid place-items-center px-3 overflow-y-auto py-6">
-    <div class="bg-white w-full max-w-lg rounded-2xl shadow-xl p-5 animate-slide-up">
+    <div class="bg-white w-full min-w-0 max-w-lg rounded-2xl shadow-xl p-5 animate-slide-up">
       <div class="flex items-center justify-between">
         <h3 class="text-lg font-semibold">AI 金鑰管理</h3>
         <button type="button" data-dismiss="aiKeysModal" class="text-slate-400 hover:text-slate-600">✕</button>
@@ -399,14 +399,14 @@
 
   <!-- Modal: Event Details -->
   <div id="eventDetailsModal" class="hidden fixed inset-0 z-40 bg-black/40 grid place-items-center px-3">
-    <div class="bg-white w-full max-w-md rounded-2xl shadow-xl p-5 animate-slide-up max-h-[90vh] flex flex-col">
+    <div class="bg-white w-full min-w-0 max-w-md rounded-2xl shadow-xl p-5 animate-slide-up max-h-[90vh] flex flex-col">
       <div class="flex justify-between items-start mb-4 gap-3">
         <h3 class="text-lg font-semibold truncate min-w-0" id="eventDetailsTitle">活動詳情</h3>
         <button data-dismiss="eventDetailsModal" class="flex-shrink-0 text-slate-400 hover:text-slate-600">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
         </button>
       </div>
-      <div class="overflow-y-auto flex-1 space-y-4" id="eventDetailsContent">
+      <div class="overflow-y-auto flex-1 min-w-0 space-y-4" id="eventDetailsContent">
         <!-- Content injected via JS -->
       </div>
       <div class="mt-5 pt-4 border-t flex justify-end gap-2 shrink-0">
@@ -417,14 +417,14 @@
 
   <!-- Modal: Reward detail (per-transaction breakdown) -->
   <div id="rewardDetailModal" class="hidden fixed inset-0 z-40 bg-black/40 grid place-items-center px-3">
-    <div class="bg-white w-full max-w-lg rounded-2xl shadow-xl p-5 animate-slide-up max-h-[90vh] flex flex-col">
+    <div class="bg-white w-full min-w-0 max-w-lg rounded-2xl shadow-xl p-5 animate-slide-up max-h-[90vh] flex flex-col">
       <div class="flex justify-between items-start mb-3 gap-3">
         <h3 class="text-base font-semibold truncate min-w-0" id="rewardDetailTitle">回饋明細</h3>
         <button data-dismiss="rewardDetailModal" class="flex-shrink-0 text-slate-400 hover:text-slate-600">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
         </button>
       </div>
-      <div class="overflow-y-auto flex-1" id="rewardDetailBody"></div>
+      <div class="overflow-y-auto flex-1 min-w-0" id="rewardDetailBody"></div>
       <div class="mt-3 pt-3 border-t text-sm font-medium text-slate-700 shrink-0" id="rewardDetailTotal"></div>
     </div>
   </div>
