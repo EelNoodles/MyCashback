@@ -277,5 +277,6 @@ module.exports = {
   buildMatchWhere,
   eventMatchesTransaction,
   matchMerchantKeyword,
+  parseMerchantKeywords,
   computeEventUsage
 };

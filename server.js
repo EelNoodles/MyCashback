@@ -23,6 +23,7 @@ const aiRoutes = require('./routes/ai');
 const fcmRoutes = require('./routes/fcm');
 const transactionRoutes = require('./routes/transactions');
 const ingestRoutes = require('./routes/ingest');
+const externalRoutes = require('./routes/external');
 const pointCtrl = require('./controllers/pointController');
 
 const app = express();
@@ -143,6 +144,11 @@ router.get('/login', optionalAuth, (req, res) => {
 // (middleware/apiKeyAuth.js), intentionally mounted before the session
 // authMiddleware below so external callers never need a browser login.
 router.use('/api/ingest', ingestRoutes);
+
+// Read-only external API (cards + their cashback events/usage) for the
+// user's own tools — same API key as ingest, also mounted before the
+// session authMiddleware.
+router.use('/api/external', externalRoutes);
 
 // All routes below require an authenticated session
 router.use(authMiddleware);
