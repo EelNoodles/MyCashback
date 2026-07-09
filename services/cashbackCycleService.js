@@ -68,7 +68,9 @@ function getCurrentCycleWindow(event, now = new Date()) {
 
 /**
  * Builds the Sequelize where-clause for transactions counted towards `event`,
- * per the matching rules:
+ * per the matching rules, checked in this order of precedence:
+ *  - minimumSpend, when set, is the core gate: a transaction below it never
+ *    counts towards this event at all, regardless of payment method/merchant
  *  - card must be one of event.cards
  *  - if event.paymentMethods is empty: only txns with no e-payment count
  *  - if non-empty: only txns whose paymentMethodId is in that set count,
@@ -91,6 +93,10 @@ function buildMatchWhere(event, window) {
     cardId: { [Op.in]: cardIds },
     ...paymentWhere
   };
+  const minSpend = event.minimumSpend != null ? Number(event.minimumSpend) : null;
+  if (minSpend != null && minSpend > 0) {
+    where.amount = { [Op.gte]: minSpend };
+  }
   if (window.start || window.end) {
     where.transactionAt = {};
     if (window.start) where.transactionAt[Op.gte] = window.start;
@@ -111,14 +117,19 @@ function paymentMatches(event, paymentMethodId) {
 }
 
 /**
- * Whether `txn` (a { cardId, paymentMethodId, transactionAt }-shaped record)
- * counts towards `event` at all — i.e. card + payment method rule match, and
- * the transaction date falls within the event's overall active period. This
- * ignores the current-cycle window used by computeEventUsage() since it's
- * meant to label a single transaction ("which campaigns does this count
- * towards"), including ones from past cycles.
+ * Whether `txn` (a { cardId, paymentMethodId, transactionAt, amount }-shaped
+ * record) counts towards `event` at all — i.e. it clears the minimumSpend
+ * gate (checked first: below it, nothing else matters), the card + payment
+ * method rule matches, the transaction date falls within the event's
+ * overall active period, and (if configured) a merchant keyword matches.
+ * This ignores the current-cycle window used by computeEventUsage() since
+ * it's meant to label a single transaction ("which campaigns does this
+ * count towards"), including ones from past cycles.
  */
 function eventMatchesTransaction(event, txn) {
+  const minSpend = event.minimumSpend != null ? Number(event.minimumSpend) : null;
+  if (minSpend != null && minSpend > 0 && Number(txn.amount) < minSpend) return false;
+
   const cardIds = (event.cards || []).map((c) => c.id);
   if (!cardIds.includes(txn.cardId)) return false;
   if (!paymentMatches(event, txn.paymentMethodId)) return false;
@@ -246,9 +257,9 @@ async function computeUsageForWindow(event, window, opts = {}) {
       estimatedReward = Math.min(estimatedReward, cap);
     }
   } else if (fixed && fixed > 0) {
-    const minSpend = event.minimumSpend != null ? Number(event.minimumSpend) : 0;
-    const qualifying = minSpend > 0 ? matched.filter((r) => Number(r.amount) >= minSpend) : matched;
-    qualifyingCount = qualifying.length;
+    // minimumSpend is already enforced by buildMatchWhere(), so every row in
+    // `matched` already clears it — each one earns the flat reward.
+    qualifyingCount = matched.length;
     estimatedReward = qualifyingCount * fixed;
     if (cap != null) {
       capReached = estimatedReward >= cap;
