@@ -214,8 +214,60 @@
       body += `<div class="mt-1.5 progress-bar"><div class="${barColor} progress-bar__fill" style="width:${pct.toFixed(1)}%"></div></div>`;
     }
 
+    if (u.estimatedReward != null) {
+      const roundingLabel = u.rewardRounding === 'floor' ? '無條件捨去' : '四捨五入';
+      const calcLabel = u.rewardCalcMode === 'perTransaction' ? '逐筆計算' : '整筆計算';
+      const hasDetail = u.rewardCalcMode === 'perTransaction' && Array.isArray(u.txnRewards) && u.txnRewards.length > 0;
+      body += `<div class="mt-1.5 pt-1.5 border-t border-slate-200 flex items-center justify-between gap-2">
+        <span>💰 預估回饋 <strong class="text-brand-700">NT$${A.fmtNumber(u.estimatedReward)}</strong>
+          <span class="text-slate-400">（${roundingLabel}・${calcLabel}）</span>
+        </span>
+        ${hasDetail ? `<button type="button" class="js-reward-detail-btn text-brand-600 hover:underline flex-shrink-0" data-event-id="${ev.id}">查看明細</button>` : ''}
+      </div>`;
+    }
+
     return `<div class="mt-2 text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-slate-700">${body}</div>`;
   }
+
+  // Per-transaction reward breakdown modal (only reachable when an event's
+  // rewardCalcMode is "perTransaction" — used to double-check a card issuer
+  // actually credited the cashback the math says each transaction earned).
+  function openRewardDetail(ev) {
+    const u = ev.usage;
+    const rows = (u.txnRewards || []).map((t) => `
+      <tr class="border-t border-slate-100">
+        <td class="py-1.5 pr-2 text-slate-500 whitespace-nowrap">${A.fmtDate(t.transactionAt)}</td>
+        <td class="py-1.5 pr-2 text-slate-600 truncate max-w-[140px]">${escapeHtml(t.note || '—')}</td>
+        <td class="py-1.5 pr-2 text-right whitespace-nowrap">NT$${A.fmtNumber(t.amount)}</td>
+        <td class="py-1.5 text-right font-medium text-brand-700 whitespace-nowrap">+${A.fmtNumber(t.reward)}</td>
+      </tr>`).join('');
+
+    document.getElementById('rewardDetailTitle').textContent = `${ev.title} － 回饋明細`;
+    document.getElementById('rewardDetailBody').innerHTML = `
+      <table class="w-full text-xs">
+        <thead>
+          <tr class="text-slate-400 text-left">
+            <th class="py-1 pr-2 font-normal">交易時間</th>
+            <th class="py-1 pr-2 font-normal">備註</th>
+            <th class="py-1 pr-2 font-normal text-right">金額</th>
+            <th class="py-1 font-normal text-right">回饋</th>
+          </tr>
+        </thead>
+        <tbody>${rows || '<tr><td colspan="4" class="py-4 text-center text-slate-400">無資料</td></tr>'}</tbody>
+      </table>`;
+    document.getElementById('rewardDetailTotal').textContent =
+      `合計回饋 NT$${A.fmtNumber(u.estimatedReward)}（共 ${(u.txnRewards || []).length} 筆交易）`;
+    A.openModal('rewardDetailModal');
+  }
+
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.js-reward-detail-btn');
+    if (!btn) return;
+    e.stopPropagation();
+    const id = parseInt(btn.dataset.eventId, 10);
+    const ev = state.events.find((x) => x.id === id);
+    if (ev) openRewardDetail(ev);
+  });
 
   // ─── Renderers ───
   function eventCardEl(ev) {
@@ -889,6 +941,8 @@
       eventForm.rewardType.value = ev.rewardType || 'cash';
       eventForm.maxReward.value = ev.maxReward ?? '';
       eventForm.minimumSpend.value = ev.minimumSpend ?? '';
+      eventForm.rewardRounding.value = ev.rewardRounding === 'floor' ? 'floor' : 'round';
+      eventForm.rewardCalcMode.value = ev.rewardCalcMode === 'perTransaction' ? 'perTransaction' : 'aggregate';
       eventForm.sourceUrl.value = ev.sourceUrl || '';
       eventForm.description.value = ev.description || '';
       eventForm.matchUnspecifiedPayment.checked = !!ev.matchUnspecifiedPayment;
@@ -939,6 +993,8 @@
         rewardType: eventForm.rewardType.value,
         maxReward: eventForm.maxReward.value || null,
         minimumSpend: eventForm.minimumSpend.value || null,
+        rewardRounding: eventForm.rewardRounding.value === 'floor' ? 'floor' : 'round',
+        rewardCalcMode: eventForm.rewardCalcMode.value === 'perTransaction' ? 'perTransaction' : 'aggregate',
         sourceUrl: eventForm.sourceUrl.value || null,
         description: eventForm.description.value || null,
         matchUnspecifiedPayment: !!eventForm.matchUnspecifiedPayment.checked,
@@ -1021,6 +1077,8 @@
     eventForm.rewardType.value = ['point', 'cash', 'coupon', 'other'].includes(r.rewardType) ? r.rewardType : 'cash';
     eventForm.maxReward.value = r.maxReward ?? '';
     eventForm.minimumSpend.value = r.minimumSpend ?? '';
+    eventForm.rewardRounding.value = r.rewardRounding === 'floor' ? 'floor' : 'round';
+    eventForm.rewardCalcMode.value = r.rewardCalcMode === 'perTransaction' ? 'perTransaction' : 'aggregate';
     eventForm.sourceUrl.value = r.sourceUrl || '';
     eventForm.description.value = r.description || '';
     eventForm.cycleType.value = ['none', 'weekly', 'biweekly', 'monthly'].includes(r.cycleType) ? r.cycleType : 'none';

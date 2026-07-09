@@ -194,6 +194,27 @@
           </label>
         </div>
 
+        <div class="bg-slate-50 rounded-xl p-3 space-y-2 border border-slate-200">
+          <div class="text-xs font-medium text-slate-600">🧮 回饋計算方式</div>
+          <div class="grid grid-cols-2 gap-3">
+            <label class="block">
+              <span class="text-xs text-slate-500">金額捨入</span>
+              <select name="rewardRounding" class="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">
+                <option value="round">四捨五入（預設）</option>
+                <option value="floor">無條件捨去</option>
+              </select>
+            </label>
+            <label class="block">
+              <span class="text-xs text-slate-500">計算方式</span>
+              <select name="rewardCalcMode" class="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">
+                <option value="aggregate">週期內加總後整筆計算（預設）</option>
+                <option value="perTransaction">每筆交易分別計算後加總</option>
+              </select>
+            </label>
+          </div>
+          <div class="text-[10px] text-slate-400">「整筆計算」= 週期內符合資格的消費先加總，再乘一次 % 並捨入一次；「逐筆計算」= 每筆消費各自乘 % 並捨入，再加總 —— 兩種算法在有零頭金額時結果可能不同。</div>
+        </div>
+
         <label class="block">
           <span class="text-xs text-slate-500">綁定卡片 (可複選)</span>
           <div id="cardChips" class="mt-1 flex flex-wrap gap-2 min-h-[40px] border border-slate-200 rounded-lg p-2 bg-slate-50"></div>
@@ -343,6 +364,20 @@
       <div class="mt-5 pt-4 border-t flex justify-end gap-2 shrink-0">
         <button id="eventDetailsEditBtn" type="button" class="px-4 py-2 text-sm rounded-lg bg-brand-600 text-white hover:bg-brand-700">前往編輯</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Modal: Reward detail (per-transaction breakdown) -->
+  <div id="rewardDetailModal" class="hidden fixed inset-0 z-40 bg-black/40 grid place-items-center px-3">
+    <div class="bg-white w-full max-w-lg rounded-2xl shadow-xl p-5 animate-slide-up max-h-[90vh] flex flex-col">
+      <div class="flex justify-between items-start mb-3 gap-3">
+        <h3 class="text-base font-semibold truncate min-w-0" id="rewardDetailTitle">回饋明細</h3>
+        <button data-dismiss="rewardDetailModal" class="flex-shrink-0 text-slate-400 hover:text-slate-600">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+      <div class="overflow-y-auto flex-1" id="rewardDetailBody"></div>
+      <div class="mt-3 pt-3 border-t text-sm font-medium text-slate-700 shrink-0" id="rewardDetailTotal"></div>
     </div>
   </div>
 

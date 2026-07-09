@@ -225,6 +225,8 @@ Authorization: Bearer &lt;你的 API 金鑰&gt;</code></pre>
           "cycleType": "monthly", "cycleAnchorDay": 1,
           "matchUnspecifiedPayment": true,
           "requireMerchantMatch": false, "merchantKeywords": [],
+          "rewardRounding": "round",       // round=四捨五入 (預設) / floor=無條件捨去
+          "rewardCalcMode": "aggregate",   // aggregate=加總後整筆計算 (預設) / perTransaction=逐筆計算後加總
           "paymentMethods": [{ "id": 1, "name": "LINE Pay" }],
           "sourceUrl": "...",
           "usage": {
@@ -232,7 +234,10 @@ Authorization: Bearer &lt;你的 API 金鑰&gt;</code></pre>
             "usedAmount": 5500, "txnCount": 3, "estimatedReward": 275,
             "cap": 300, "capReached": false,
             "remainingCapAmount": 500,        // 還可刷多少即達上限（回饋%活動）
-            "remainingCapTransactions": null  // 還可有幾筆符合門檻的交易（固定回饋活動）
+            "remainingCapTransactions": null, // 還可有幾筆符合門檻的交易（固定回饋活動）
+            "rewardRounding": "round", "rewardCalcMode": "aggregate",
+            "txnRewards": null   // 只有 rewardCalcMode=perTransaction 時才有值：
+                                 // [{ "transactionId": 1, "transactionAt": "...", "amount": 1280, "note": "...", "reward": 64 }, ...]
           }
         }
       ]
