@@ -189,14 +189,13 @@ function roundReward(event, value) {
 }
 
 /**
- * Computes actual accumulated spend for the event's current cycle, the
- * cashback that should have accrued from it (honouring rewardRounding and
- * rewardCalcMode — used to independently verify a card issuer isn't
- * under-crediting rewards), and whether/how close the reward cap is.
+ * Core reward calculation for `event` over an arbitrary [window.start,
+ * window.end) — honours rewardRounding and rewardCalcMode, and (opts.
+ * includeTransactions) can attach the full list of matching transactions
+ * regardless of reward type/calc mode, for an audit/verification view.
  * Returns null when the event has no linked cards (nothing to match against).
  */
-async function computeEventUsage(event, now = new Date()) {
-  const window = getCurrentCycleWindow(event, now);
+async function computeUsageForWindow(event, window, opts = {}) {
   const where = buildMatchWhere(event, window);
   if (!where) return null;
 
@@ -258,7 +257,7 @@ async function computeEventUsage(event, now = new Date()) {
     }
   }
 
-  return {
+  const result = {
     cycleStart: window.start,
     cycleEnd: window.end,
     usedAmount,
@@ -273,6 +272,36 @@ async function computeEventUsage(event, now = new Date()) {
     rewardCalcMode: event.rewardCalcMode || 'aggregate',
     txnRewards
   };
+  if (opts.includeTransactions) {
+    result.transactions = matched.map((r) => ({
+      id: r.id,
+      transactionAt: r.transactionAt,
+      amount: Number(r.amount),
+      note: r.note
+    }));
+  }
+  return result;
+}
+
+/**
+ * Computes actual accumulated spend for the event's *current cycle* and the
+ * cashback that should have accrued from it. Used by the cashback list and
+ * external API — kept lean (no full transaction list) since those are
+ * fetched frequently.
+ */
+async function computeEventUsage(event, now = new Date()) {
+  const window = getCurrentCycleWindow(event, now);
+  return computeUsageForWindow(event, window);
+}
+
+/**
+ * Same calculation, but over an explicit { start, end } window instead of
+ * the event's own current cycle, and always including the matching
+ * transaction list — for the reward-audit view where the user picks their
+ * own comparison period (a past month, a custom range, etc).
+ */
+async function computeEventUsageInWindow(event, window) {
+  return computeUsageForWindow(event, window, { includeTransactions: true });
 }
 
 module.exports = {
@@ -282,5 +311,6 @@ module.exports = {
   eventMatchesTransaction,
   matchMerchantKeyword,
   parseMerchantKeywords,
-  computeEventUsage
+  computeEventUsage,
+  computeEventUsageInWindow
 };

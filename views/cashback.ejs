@@ -22,10 +22,11 @@
     <!-- Filters -->
     <section class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 space-y-3">
       <!-- Search mode -->
-      <div class="flex items-center gap-2 text-xs">
+      <div class="flex items-center gap-2 text-xs flex-wrap">
         <span class="text-slate-500">搜尋模式：</span>
         <button data-mode="normal" class="mode-chip px-3 py-1 rounded-full bg-brand-600 text-white">一般搜尋</button>
         <button data-mode="ai" class="mode-chip px-3 py-1 rounded-full border border-slate-300 text-slate-600">✨ AI 智能搜尋</button>
+        <button data-mode="rewards" class="mode-chip px-3 py-1 rounded-full border border-slate-300 text-slate-600">💰 回饋核對</button>
       </div>
 
       <!-- Normal filters -->
@@ -102,6 +103,53 @@
           </label>
         </div>
         <p class="text-[11px] text-slate-400">AI 會分析你已記錄的所有進行中活動，推薦回饋最高的卡片 / 支付組合並提醒注意事項。Pro 系列分析更精準但較慢；Flash 系列回覆快、額度省。</p>
+      </div>
+
+      <!-- Rewards audit -->
+      <div id="rewardsAuditWrap" class="hidden space-y-3">
+        <p class="text-[11px] text-slate-500">依實際交易紀錄計算每個活動「應得」的回饋，可自訂計算區間，用來核對金融機構實際入帳的回饋有沒有少給。</p>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <label class="block">
+            <span class="text-xs text-slate-500">指定卡片</span>
+            <select id="raCardFilter" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+              <option value="">全部</option>
+            </select>
+          </label>
+          <label class="block">
+            <span class="text-xs text-slate-500">指定支付方式</span>
+            <select id="raPmFilter" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+              <option value="">全部</option>
+            </select>
+          </label>
+          <label class="block md:col-span-2">
+            <span class="text-xs text-slate-500">搜尋（活動標題 / 說明）</span>
+            <input id="raQInput" type="search" placeholder="例如：CAMA"
+                   class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          </label>
+        </div>
+        <div class="flex items-center gap-2 text-xs">
+          <span class="text-slate-500">狀態：</span>
+          <button data-ra-status="active" class="ra-status-chip px-3 py-1 rounded-full bg-brand-600 text-white">進行中</button>
+          <button data-ra-status="expired" class="ra-status-chip px-3 py-1 rounded-full border border-slate-300 text-slate-600">已結束</button>
+          <button data-ra-status="all" class="ra-status-chip px-3 py-1 rounded-full border border-slate-300 text-slate-600">全部</button>
+        </div>
+        <div class="flex items-center gap-2 text-xs flex-wrap">
+          <span class="text-slate-500">計算區間：</span>
+          <button data-ra-range="cycle" class="ra-range-chip px-3 py-1 rounded-full bg-brand-600 text-white">活動自身週期</button>
+          <button data-ra-range="thisMonth" class="ra-range-chip px-3 py-1 rounded-full border border-slate-300 text-slate-600">本月</button>
+          <button data-ra-range="lastMonth" class="ra-range-chip px-3 py-1 rounded-full border border-slate-300 text-slate-600">上月</button>
+          <button data-ra-range="custom" class="ra-range-chip px-3 py-1 rounded-full border border-slate-300 text-slate-600">自訂區間</button>
+        </div>
+        <div id="raCustomRangeWrap" class="hidden grid grid-cols-2 gap-3">
+          <label class="block">
+            <span class="text-xs text-slate-500">起</span>
+            <input id="raFromInput" type="date" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          </label>
+          <label class="block">
+            <span class="text-xs text-slate-500">迄（不含當天，即算到前一天結束）</span>
+            <input id="raToInput" type="date" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          </label>
+        </div>
       </div>
     </section>
 
