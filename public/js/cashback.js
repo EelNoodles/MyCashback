@@ -57,6 +57,17 @@
   const aiModelSelect = document.getElementById('aiModelSelect');
   const aiParseModelSelect = document.getElementById('aiParseModel');
 
+  // Rewards audit
+  const rewardsAuditWrap = document.getElementById('rewardsAuditWrap');
+  const raCardFilter = document.getElementById('raCardFilter');
+  const raPmFilter = document.getElementById('raPmFilter');
+  const raQInput = document.getElementById('raQInput');
+  const raStatusChips = document.querySelectorAll('.ra-status-chip');
+  const raRangeChips = document.querySelectorAll('.ra-range-chip');
+  const raCustomRangeWrap = document.getElementById('raCustomRangeWrap');
+  const raFromInput = document.getElementById('raFromInput');
+  const raToInput = document.getElementById('raToInput');
+
   const AI_MODEL_STORAGE_KEY = 'mycashback.aiModel';
   const GROUP_BY_STORAGE_KEY = 'mycashback.groupBy';
   const SORT_BY_STORAGE_KEY = 'mycashback.sortBy';
@@ -76,7 +87,15 @@
     events: [],
     aiResult: null,
     selectedCardIds: new Set(),
-    selectedPmIds: new Set()
+    selectedPmIds: new Set(),
+    ra: {
+      status: 'active',
+      cardId: '',
+      pmId: '',
+      q: '',
+      range: 'cycle',
+      events: []
+    }
   };
 
   function debounce(fn, ms) {
@@ -214,8 +233,80 @@
       body += `<div class="mt-1.5 progress-bar"><div class="${barColor} progress-bar__fill" style="width:${pct.toFixed(1)}%"></div></div>`;
     }
 
+    if (u.estimatedReward != null) {
+      const roundingLabel = u.rewardRounding === 'floor' ? '無條件捨去' : '四捨五入';
+      const calcLabel = u.rewardCalcMode === 'perTransaction' ? '逐筆計算' : '整筆計算';
+      const hasDetail = u.rewardCalcMode === 'perTransaction' && Array.isArray(u.txnRewards) && u.txnRewards.length > 0;
+      body += `<div class="mt-1.5 pt-1.5 border-t border-slate-200 flex items-center justify-between gap-2">
+        <span>💰 預估回饋 <strong class="text-brand-700">NT$${A.fmtNumber(u.estimatedReward)}</strong>
+          <span class="text-slate-400">（${roundingLabel}・${calcLabel}）</span>
+        </span>
+        ${hasDetail ? `<button type="button" class="js-reward-detail-btn text-brand-600 hover:underline flex-shrink-0" data-event-id="${ev.id}">查看明細</button>` : ''}
+      </div>`;
+    }
+
     return `<div class="mt-2 text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-slate-700">${body}</div>`;
   }
+
+  // Per-transaction reward breakdown modal (only reachable when an event's
+  // rewardCalcMode is "perTransaction" — used to double-check a card issuer
+  // actually credited the cashback the math says each transaction earned).
+  // Handles both cases: rewardCalcMode=perTransaction (u.txnRewards has each
+  // transaction's own computed reward) and aggregate mode (only u.transactions
+  // is available — the audit view still wants to show which transactions fed
+  // into the one lump-sum calculation, just without a per-row reward column).
+  function openRewardDetail(ev) {
+    const u = ev.usage;
+    const hasPerTxnRewards = Array.isArray(u.txnRewards) && u.txnRewards.length > 0;
+    const list = hasPerTxnRewards ? u.txnRewards : (u.transactions || []);
+
+    const rows = list.map((t) => `
+      <tr class="border-t border-slate-100">
+        <td class="py-1.5 pr-2 text-slate-500 whitespace-nowrap">${A.fmtDate(t.transactionAt)}</td>
+        <td class="py-1.5 pr-2 text-slate-600 truncate max-w-[140px]">${escapeHtml(t.note || '—')}</td>
+        <td class="py-1.5 pr-2 text-right whitespace-nowrap">NT$${A.fmtNumber(t.amount)}</td>
+        ${hasPerTxnRewards ? `<td class="py-1.5 text-right font-medium text-brand-700 whitespace-nowrap">+${A.fmtNumber(t.reward)}</td>` : ''}
+      </tr>`).join('');
+
+    const roundingLabel = u.rewardRounding === 'floor' ? '無條件捨去' : '四捨五入';
+    const formulaNote = hasPerTxnRewards
+      ? `每筆消費各自 × 回饋% 並${roundingLabel}後加總。`
+      : (ev.cashbackPercent != null
+        ? `消費加總 NT$${A.fmtNumber(u.usedAmount)} × ${ev.cashbackPercent}% 後${roundingLabel}一次，得出總回饋（此活動採整筆計算，非逐筆加總，故不逐筆顯示回饋金額）。`
+        : `此活動為固定回饋，符合門檻的交易各得 NT$${A.fmtNumber(ev.cashbackFixed)}。`);
+
+    document.getElementById('rewardDetailTitle').textContent = `${ev.title} － 回饋明細`;
+    document.getElementById('rewardDetailBody').innerHTML = `
+      <p class="text-[11px] text-slate-400 mb-2">${formulaNote}</p>
+      <table class="w-full text-xs">
+        <thead>
+          <tr class="text-slate-400 text-left">
+            <th class="py-1 pr-2 font-normal">交易時間</th>
+            <th class="py-1 pr-2 font-normal">備註</th>
+            <th class="py-1 pr-2 font-normal text-right">金額</th>
+            ${hasPerTxnRewards ? '<th class="py-1 font-normal text-right">回饋</th>' : ''}
+          </tr>
+        </thead>
+        <tbody>${rows || `<tr><td colspan="${hasPerTxnRewards ? 4 : 3}" class="py-4 text-center text-slate-400">無資料</td></tr>`}</tbody>
+      </table>`;
+    document.getElementById('rewardDetailTotal').textContent =
+      `合計回饋 NT$${A.fmtNumber(u.estimatedReward)}（共 ${list.length} 筆交易）`;
+    A.openModal('rewardDetailModal');
+  }
+
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.js-reward-detail-btn');
+    if (!btn) return;
+    e.stopPropagation();
+    const id = parseInt(btn.dataset.eventId, 10);
+    // Same event id can be cached in both lists (normal-list usage lacks the
+    // full transaction breakdown the audit view needs) — prefer whichever
+    // list matches the mode actually showing the button right now.
+    const primary = state.mode === 'rewards' ? state.ra.events : state.events;
+    const fallback = state.mode === 'rewards' ? state.events : state.ra.events;
+    const ev = primary.find((x) => x.id === id) || fallback.find((x) => x.id === id);
+    if (ev) openRewardDetail(ev);
+  });
 
   // ─── Renderers ───
   function eventCardEl(ev) {
@@ -458,6 +549,14 @@
         + cards.map((c) => `<option value="${c.id}">${c.name}</option>`).join('');
       pmFilter.innerHTML = '<option value="">全部</option>'
         + pms.map((p) => `<option value="${p.id}">${p.name}</option>`).join('');
+      if (raCardFilter) {
+        raCardFilter.innerHTML = '<option value="">全部</option>'
+          + cards.map((c) => `<option value="${c.id}">${c.name}</option>`).join('');
+      }
+      if (raPmFilter) {
+        raPmFilter.innerHTML = '<option value="">全部</option>'
+          + pms.map((p) => `<option value="${p.id}">${p.name}</option>`).join('');
+      }
     } catch (err) {
       console.error('loadTags', err);
     }
@@ -807,6 +906,143 @@
     }
   }
 
+  // ─── Rewards audit ───
+  function raWindowLabel(u) {
+    if (!u.cycleStart && !u.cycleEnd) return '不限期間';
+    const start = u.cycleStart ? A.fmtDateOnly(u.cycleStart) : '—';
+    const end = u.cycleEnd ? A.fmtDateOnly(u.cycleEnd) : '—';
+    return `${start} ~ ${end}`;
+  }
+
+  function rewardAuditCardEl(ev) {
+    const card = document.createElement('div');
+    card.className = 'card p-3';
+    const u = ev.usage;
+
+    const cardChips = (ev.cards || []).map((c) => {
+      const net = c.network ? ` · ${NETWORK_LABELS[c.network] || ''}` : '';
+      if (c.imageUrl) {
+        return `<span class="credit-card-mini"><img class="credit-card-mini__img" src="${A.url(c.imageUrl)}" alt="" />${c.name}${net}</span>`;
+      }
+      return `<span class="credit-card-mini">💳 ${c.name}${net}</span>`;
+    }).join('');
+    const pmChips = (ev.paymentMethods || []).map((p) => {
+      if (p.imageUrl) {
+        return `<span class="pm-badge"><img class="pm-badge__img" src="${A.url(p.imageUrl)}" alt="" />${p.name}</span>`;
+      }
+      return `<span class="pm-badge">💸 ${p.name}</span>`;
+    }).join('');
+
+    const roundingLabel = u.rewardRounding === 'floor' ? '無條件捨去' : '四捨五入';
+    const calcLabel = u.rewardCalcMode === 'perTransaction' ? '逐筆計算' : '整筆計算';
+    const hasTxns = (u.transactions && u.transactions.length) || (u.txnRewards && u.txnRewards.length);
+
+    card.innerHTML = `
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0 flex-1">
+          <div class="font-medium truncate" title="${escapeHtml(ev.title)}">${escapeHtml(ev.title)}</div>
+          <div class="text-[11px] text-slate-400 mt-0.5">計算區間：${raWindowLabel(u)}</div>
+        </div>
+        <div class="text-right flex-shrink-0">
+          <div class="text-[11px] text-slate-400">消費 NT$${A.fmtNumber(u.usedAmount)}（${u.txnCount} 筆）</div>
+        </div>
+      </div>
+      <div class="mt-2 flex flex-wrap gap-1">${cardChips}${pmChips}</div>
+      <div class="mt-2.5 pt-2.5 border-t border-slate-100 flex items-center justify-between gap-2">
+        <div>
+          <div class="text-[11px] text-slate-400">💰 應得回饋（${roundingLabel}・${calcLabel}）</div>
+          <div class="text-xl font-semibold text-brand-700">NT$${A.fmtNumber(u.estimatedReward)}</div>
+        </div>
+        ${hasTxns ? `<button type="button" class="js-reward-detail-btn text-xs text-brand-600 hover:underline border border-brand-200 rounded-lg px-2.5 py-1.5" data-event-id="${ev.id}">查看明細</button>` : ''}
+      </div>
+      ${u.cap != null ? `<div class="mt-1.5 text-[11px] text-slate-400">回饋上限 NT$${A.fmtNumber(u.cap)}${u.capReached ? ' · <span class="text-rose-500 font-medium">已達上限</span>' : ''}</div>` : ''}
+    `;
+    return card;
+  }
+
+  function raPresetRange(preset) {
+    const now = new Date();
+    if (preset === 'thisMonth') {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+      return { from: start.toISOString(), to: end.toISOString() };
+    }
+    if (preset === 'lastMonth') {
+      const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const end = new Date(now.getFullYear(), now.getMonth(), 1);
+      return { from: start.toISOString(), to: end.toISOString() };
+    }
+    return null;
+  }
+
+  async function loadRewardsAudit() {
+    listEl.innerHTML = `<div class="text-sm text-slate-400 col-span-full py-6 flex items-center justify-center gap-2">${SPINNER_SVG} 計算中…</div>`;
+    const params = new URLSearchParams();
+    params.set('status', state.ra.status);
+    if (state.ra.cardId) params.set('cardId', state.ra.cardId);
+    if (state.ra.pmId) params.set('paymentMethodId', state.ra.pmId);
+    if (state.ra.q) params.set('q', state.ra.q);
+
+    if (state.ra.range === 'thisMonth' || state.ra.range === 'lastMonth') {
+      const r = raPresetRange(state.ra.range);
+      params.set('range', 'range');
+      params.set('from', r.from);
+      params.set('to', r.to);
+    } else if (state.ra.range === 'custom') {
+      if (!raFromInput.value || !raToInput.value) {
+        listEl.innerHTML = '<div class="text-sm text-slate-400 col-span-full">請選擇自訂區間的起訖日期</div>';
+        return;
+      }
+      params.set('range', 'range');
+      params.set('from', new Date(`${raFromInput.value}T00:00:00`).toISOString());
+      // "迄" is inclusive of that whole day, so push the boundary to the next day (window end is exclusive).
+      const toDate = new Date(`${raToInput.value}T00:00:00`);
+      toDate.setDate(toDate.getDate() + 1);
+      params.set('to', toDate.toISOString());
+    }
+    // range === 'cycle' -> omit range/from/to entirely, server defaults to each event's own cycle
+
+    try {
+      const data = await A.jsonFetch(A.api('/cashback/rewards-audit?' + params.toString()));
+      state.ra.events = data.events || [];
+      listEl.innerHTML = '';
+      if (!state.ra.events.length) {
+        listEl.innerHTML = '<div class="text-sm text-slate-400 col-span-full">沒有符合條件的活動</div>';
+        return;
+      }
+      for (const ev of state.ra.events) listEl.appendChild(rewardAuditCardEl(ev));
+    } catch (err) {
+      listEl.innerHTML = `<div class="text-sm text-rose-500 col-span-full">計算失敗：${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  raCardFilter?.addEventListener('change', () => { state.ra.cardId = raCardFilter.value; loadRewardsAudit(); });
+  raPmFilter?.addEventListener('change', () => { state.ra.pmId = raPmFilter.value; loadRewardsAudit(); });
+  raQInput?.addEventListener('input', debounce(() => { state.ra.q = raQInput.value.trim(); loadRewardsAudit(); }, 300));
+  raStatusChips.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      raStatusChips.forEach((b) => b.classList.remove('bg-brand-600', 'text-white'));
+      raStatusChips.forEach((b) => b.classList.add('border', 'border-slate-300', 'text-slate-600'));
+      btn.classList.remove('border', 'border-slate-300', 'text-slate-600');
+      btn.classList.add('bg-brand-600', 'text-white');
+      state.ra.status = btn.dataset.raStatus;
+      loadRewardsAudit();
+    });
+  });
+  raRangeChips.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      raRangeChips.forEach((b) => b.classList.remove('bg-brand-600', 'text-white'));
+      raRangeChips.forEach((b) => b.classList.add('border', 'border-slate-300', 'text-slate-600'));
+      btn.classList.remove('border', 'border-slate-300', 'text-slate-600');
+      btn.classList.add('bg-brand-600', 'text-white');
+      state.ra.range = btn.dataset.raRange;
+      raCustomRangeWrap.classList.toggle('hidden', state.ra.range !== 'custom');
+      if (state.ra.range !== 'custom' || (raFromInput.value && raToInput.value)) loadRewardsAudit();
+    });
+  });
+  raFromInput?.addEventListener('change', () => { if (state.ra.range === 'custom') loadRewardsAudit(); });
+  raToInput?.addEventListener('change', () => { if (state.ra.range === 'custom') loadRewardsAudit(); });
+
   modeChips.forEach((btn) => {
     btn.addEventListener('click', () => {
       const mode = btn.dataset.mode;
@@ -820,13 +1056,18 @@
         b.classList.toggle('border-slate-300', !on);
         b.classList.toggle('text-slate-600', !on);
       });
+      normalFilters.classList.add('hidden');
+      aiSearchWrap.classList.add('hidden');
+      rewardsAuditWrap.classList.add('hidden');
+
       if (mode === 'ai') {
-        normalFilters.classList.add('hidden');
         aiSearchWrap.classList.remove('hidden');
         listEl.innerHTML = '<div class="text-sm text-slate-400 col-span-full">輸入消費場景或商家，讓 AI 推薦回饋最高的方案。</div>';
         aiSearchInput.focus();
+      } else if (mode === 'rewards') {
+        rewardsAuditWrap.classList.remove('hidden');
+        loadRewardsAudit();
       } else {
-        aiSearchWrap.classList.add('hidden');
         normalFilters.classList.remove('hidden');
         loadEvents();
       }
@@ -889,6 +1130,8 @@
       eventForm.rewardType.value = ev.rewardType || 'cash';
       eventForm.maxReward.value = ev.maxReward ?? '';
       eventForm.minimumSpend.value = ev.minimumSpend ?? '';
+      eventForm.rewardRounding.value = ev.rewardRounding === 'floor' ? 'floor' : 'round';
+      eventForm.rewardCalcMode.value = ev.rewardCalcMode === 'perTransaction' ? 'perTransaction' : 'aggregate';
       eventForm.sourceUrl.value = ev.sourceUrl || '';
       eventForm.description.value = ev.description || '';
       eventForm.matchUnspecifiedPayment.checked = !!ev.matchUnspecifiedPayment;
@@ -939,6 +1182,8 @@
         rewardType: eventForm.rewardType.value,
         maxReward: eventForm.maxReward.value || null,
         minimumSpend: eventForm.minimumSpend.value || null,
+        rewardRounding: eventForm.rewardRounding.value === 'floor' ? 'floor' : 'round',
+        rewardCalcMode: eventForm.rewardCalcMode.value === 'perTransaction' ? 'perTransaction' : 'aggregate',
         sourceUrl: eventForm.sourceUrl.value || null,
         description: eventForm.description.value || null,
         matchUnspecifiedPayment: !!eventForm.matchUnspecifiedPayment.checked,
@@ -1021,6 +1266,8 @@
     eventForm.rewardType.value = ['point', 'cash', 'coupon', 'other'].includes(r.rewardType) ? r.rewardType : 'cash';
     eventForm.maxReward.value = r.maxReward ?? '';
     eventForm.minimumSpend.value = r.minimumSpend ?? '';
+    eventForm.rewardRounding.value = r.rewardRounding === 'floor' ? 'floor' : 'round';
+    eventForm.rewardCalcMode.value = r.rewardCalcMode === 'perTransaction' ? 'perTransaction' : 'aggregate';
     eventForm.sourceUrl.value = r.sourceUrl || '';
     eventForm.description.value = r.description || '';
     eventForm.cycleType.value = ['none', 'weekly', 'biweekly', 'monthly'].includes(r.cycleType) ? r.cycleType : 'none';

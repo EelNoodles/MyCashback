@@ -1,6 +1,6 @@
 'use strict';
 
-const { Op, fn, col } = require('sequelize');
+const { Op } = require('sequelize');
 const { CardTransaction } = require('../models');
 
 /**
@@ -181,45 +181,40 @@ function matchMerchantKeyword(event, txn) {
   return { matched: false, keyword: null };
 }
 
+// Rounds (or floors) a reward amount to the nearest whole currency
+// unit/point per the event's rewardRounding setting ('round' is the
+// default when unset, matching the DB column default).
+function roundReward(event, value) {
+  return event.rewardRounding === 'floor' ? Math.floor(value) : Math.round(value);
+}
+
 /**
- * Computes actual accumulated spend for the event's current cycle and, from
- * that, whether the reward cap has been reached and how much more can still
- * be spent (or how many more qualifying transactions remain) before it does.
+ * Core reward calculation for `event` over an arbitrary [window.start,
+ * window.end) — honours rewardRounding and rewardCalcMode, and (opts.
+ * includeTransactions) can attach the full list of matching transactions
+ * regardless of reward type/calc mode, for an audit/verification view.
  * Returns null when the event has no linked cards (nothing to match against).
  */
-async function computeEventUsage(event, now = new Date()) {
-  const window = getCurrentCycleWindow(event, now);
+async function computeUsageForWindow(event, window, opts = {}) {
   const where = buildMatchWhere(event, window);
   if (!where) return null;
 
-  let usedAmount;
-  let txnCount;
-  let merchantMatchedRows = null; // only populated when requireMerchantMatch, reused below for minimumSpend filtering
+  // Always pull the actual matching rows rather than a SQL aggregate: needed
+  // both for merchant-keyword filtering (not expressible as one SQL
+  // condition) and for a per-transaction reward breakdown when
+  // rewardCalcMode is 'perTransaction'.
+  const rows = await CardTransaction.findAll({
+    where,
+    attributes: ['id', 'amount', 'transactionAt', 'note', 'rawCardName', 'rawPaymentMethodName'],
+    order: [['transactionAt', 'ASC']],
+    raw: true
+  });
+  const matched = event.requireMerchantMatch
+    ? rows.filter((r) => matchMerchantKeyword(event, r).matched)
+    : rows;
 
-  if (event.requireMerchantMatch) {
-    // Merchant-keyword matching (case/whitespace-insensitive substring search
-    // against note/card/payment-method text) isn't expressible as a single
-    // SQL aggregate, so pull the candidate rows and filter/sum in JS instead.
-    const rows = await CardTransaction.findAll({
-      where,
-      attributes: ['id', 'amount', 'note', 'rawCardName', 'rawPaymentMethodName'],
-      raw: true
-    });
-    merchantMatchedRows = rows.filter((r) => matchMerchantKeyword(event, r).matched);
-    usedAmount = merchantMatchedRows.reduce((sum, r) => sum + Number(r.amount), 0);
-    txnCount = merchantMatchedRows.length;
-  } else {
-    const totals = await CardTransaction.findOne({
-      where,
-      attributes: [
-        [fn('COALESCE', fn('SUM', col('amount')), 0), 'usedAmount'],
-        [fn('COUNT', col('id')), 'txnCount']
-      ],
-      raw: true
-    });
-    usedAmount = Number(totals && totals.usedAmount) || 0;
-    txnCount = Number(totals && totals.txnCount) || 0;
-  }
+  const usedAmount = matched.reduce((sum, r) => sum + Number(r.amount), 0);
+  const txnCount = matched.length;
 
   const cap = event.maxReward != null ? Number(event.maxReward) : null;
   const pct = event.cashbackPercent != null ? Number(event.cashbackPercent) : null;
@@ -230,9 +225,21 @@ async function computeEventUsage(event, now = new Date()) {
   let remainingCapAmount = null; // percent-based: more spend before hitting the cap
   let remainingCapTransactions = null; // fixed-based: more qualifying txns before hitting the cap
   let qualifyingCount = null;
+  let txnRewards = null; // per-transaction breakdown; only populated for percent + perTransaction
 
   if (pct && pct > 0) {
-    estimatedReward = usedAmount * pct / 100;
+    if (event.rewardCalcMode === 'perTransaction') {
+      txnRewards = matched.map((r) => ({
+        transactionId: r.id,
+        transactionAt: r.transactionAt,
+        amount: Number(r.amount),
+        note: r.note,
+        reward: roundReward(event, Number(r.amount) * pct / 100)
+      }));
+      estimatedReward = txnRewards.reduce((sum, t) => sum + t.reward, 0);
+    } else {
+      estimatedReward = roundReward(event, usedAmount * pct / 100);
+    }
     if (cap != null) {
       capReached = estimatedReward >= cap;
       remainingCapAmount = Math.max(0, Math.ceil((cap * 100 / pct - usedAmount) * 100) / 100);
@@ -240,15 +247,8 @@ async function computeEventUsage(event, now = new Date()) {
     }
   } else if (fixed && fixed > 0) {
     const minSpend = event.minimumSpend != null ? Number(event.minimumSpend) : 0;
-    if (merchantMatchedRows) {
-      qualifyingCount = minSpend > 0
-        ? merchantMatchedRows.filter((r) => Number(r.amount) >= minSpend).length
-        : merchantMatchedRows.length;
-    } else {
-      const qualifyingWhere = { ...where };
-      if (minSpend > 0) qualifyingWhere.amount = { [Op.gte]: minSpend };
-      qualifyingCount = await CardTransaction.count({ where: qualifyingWhere });
-    }
+    const qualifying = minSpend > 0 ? matched.filter((r) => Number(r.amount) >= minSpend) : matched;
+    qualifyingCount = qualifying.length;
     estimatedReward = qualifyingCount * fixed;
     if (cap != null) {
       capReached = estimatedReward >= cap;
@@ -257,7 +257,7 @@ async function computeEventUsage(event, now = new Date()) {
     }
   }
 
-  return {
+  const result = {
     cycleStart: window.start,
     cycleEnd: window.end,
     usedAmount,
@@ -267,8 +267,41 @@ async function computeEventUsage(event, now = new Date()) {
     cap,
     capReached,
     remainingCapAmount,
-    remainingCapTransactions
+    remainingCapTransactions,
+    rewardRounding: event.rewardRounding || 'round',
+    rewardCalcMode: event.rewardCalcMode || 'aggregate',
+    txnRewards
   };
+  if (opts.includeTransactions) {
+    result.transactions = matched.map((r) => ({
+      id: r.id,
+      transactionAt: r.transactionAt,
+      amount: Number(r.amount),
+      note: r.note
+    }));
+  }
+  return result;
+}
+
+/**
+ * Computes actual accumulated spend for the event's *current cycle* and the
+ * cashback that should have accrued from it. Used by the cashback list and
+ * external API — kept lean (no full transaction list) since those are
+ * fetched frequently.
+ */
+async function computeEventUsage(event, now = new Date()) {
+  const window = getCurrentCycleWindow(event, now);
+  return computeUsageForWindow(event, window);
+}
+
+/**
+ * Same calculation, but over an explicit { start, end } window instead of
+ * the event's own current cycle, and always including the matching
+ * transaction list — for the reward-audit view where the user picks their
+ * own comparison period (a past month, a custom range, etc).
+ */
+async function computeEventUsageInWindow(event, window) {
+  return computeUsageForWindow(event, window, { includeTransactions: true });
 }
 
 module.exports = {
@@ -278,5 +311,6 @@ module.exports = {
   eventMatchesTransaction,
   matchMerchantKeyword,
   parseMerchantKeywords,
-  computeEventUsage
+  computeEventUsage,
+  computeEventUsageInWindow
 };

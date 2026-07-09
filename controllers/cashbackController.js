@@ -7,7 +7,7 @@ const {
   Card,
   PaymentMethod
 } = require('../models');
-const { computeEventUsage } = require('../services/cashbackCycleService');
+const { computeEventUsage, computeEventUsageInWindow, getCurrentCycleWindow } = require('../services/cashbackCycleService');
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -128,6 +128,74 @@ async function withUsage(events) {
   return Array.isArray(events) ? withData : withData[0];
 }
 
+// GET /api/cashback/rewards-audit?status=active|expired|all&cardId=&paymentMethodId=&q=
+//   &range=cycle(預設)|range&from=&to=
+//
+// Dedicated reconciliation view: for each matching event, how much reward
+// *should* have accrued over either its own current cycle, or an arbitrary
+// caller-chosen [from, to) window — always including the underlying
+// transaction list, so the user can check a card issuer's actual credited
+// amount against this app's own calculation.
+exports.rewardsAudit = async (req, res, next) => {
+  try {
+    const status = req.query.status || 'active';
+    const q = (req.query.q || '').trim();
+    const cardId = req.query.cardId ? parseInt(req.query.cardId, 10) : null;
+    const paymentMethodId = req.query.paymentMethodId ? parseInt(req.query.paymentMethodId, 10) : null;
+    const today = todayStr();
+
+    const where = { userId: req.user.id };
+    if (status === 'active') {
+      where[Op.and] = [{ [Op.or]: [{ endDate: null }, { endDate: { [Op.gte]: today } }] }];
+    } else if (status === 'expired') {
+      where.endDate = { [Op.lt]: today };
+    }
+    if (q) {
+      where[Op.and] = (where[Op.and] || []).concat([{
+        [Op.or]: [{ title: { [Op.like]: `%${q}%` } }, { description: { [Op.like]: `%${q}%` } }]
+      }]);
+    }
+
+    const includes = eventInclude();
+    if (cardId) { includes[0].where = { id: cardId }; includes[0].required = true; }
+    if (paymentMethodId) { includes[1].where = { id: paymentMethodId }; includes[1].required = true; }
+
+    const events = await CashbackEvent.findAll({
+      where,
+      include: includes,
+      order: [['title', 'ASC']]
+    });
+
+    const useCustomRange = req.query.range === 'range';
+    let rangeStart = null;
+    let rangeEnd = null;
+    if (useCustomRange) {
+      if (req.query.from) rangeStart = new Date(req.query.from);
+      if (req.query.to) rangeEnd = new Date(req.query.to);
+      if ((rangeStart && Number.isNaN(rangeStart.getTime())) || (rangeEnd && Number.isNaN(rangeEnd.getTime()))) {
+        return res.status(400).json({ error: 'RANGE_INVALID' });
+      }
+    }
+
+    const results = [];
+    for (const ev of events) {
+      const window = useCustomRange ? { start: rangeStart, end: rangeEnd } : getCurrentCycleWindow(ev, new Date());
+      const usage = await computeEventUsageInWindow(ev, window);
+      if (!usage) continue; // no linked cards, nothing to compute
+      const json = ev.toJSON();
+      json.usage = usage;
+      results.push(json);
+    }
+
+    res.json({
+      range: useCustomRange ? 'range' : 'cycle',
+      from: rangeStart,
+      to: rangeEnd,
+      events: results
+    });
+  } catch (err) { next(err); }
+};
+
 // GET /api/cashback/:id
 exports.get = async (req, res, next) => {
   try {
@@ -187,6 +255,8 @@ function parsePayload(body) {
     matchUnspecifiedPayment: !!body.matchUnspecifiedPayment,
     requireMerchantMatch: !!body.requireMerchantMatch,
     merchantKeywords: body.merchantKeywords ? String(body.merchantKeywords).trim().slice(0, 2000) || null : null,
+    rewardRounding: body.rewardRounding === 'floor' ? 'floor' : 'round',
+    rewardCalcMode: body.rewardCalcMode === 'perTransaction' ? 'perTransaction' : 'aggregate',
     note: note || null
   };
 

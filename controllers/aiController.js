@@ -68,6 +68,11 @@ const SYSTEM_PROMPT = `你是一個專門解析中文「信用卡 / 支付回饋
       各萃取一個能唯一辨識該商家的核心關鍵字，去除地址、分店、標點與多餘敘述（例如「CAMA café
       台南夏都店」-> "CAMA"；「全家便利商店（信義店）」-> "全家"）；同一商家只保留一個最短又可
       辨識的關鍵字，不要重複列出同義詞。
+  13. rewardRounding 只能是 "round" 或 "floor"：文字提到「無條件捨去」「捨去」「無條件去尾數」
+      時填 "floor"；提到「四捨五入」時填 "round"；完全沒提到捨入方式時，一律預設填 "round"。
+  14. rewardCalcMode 只能是 "aggregate" 或 "perTransaction"：文字提到「每筆消費分別計算」「單筆
+      計算」「逐筆計算」時填 "perTransaction"；提到「期間內累積消費後計算」「加總後計算」「合併
+      計算」時填 "aggregate"；完全沒提到計算方式時，一律預設填 "aggregate"。
 
 JSON Schema：
 {
@@ -87,6 +92,8 @@ JSON Schema：
   "matchUnspecifiedPayment": boolean,
   "requireMerchantMatch": boolean,
   "merchantKeywords": string[],
+  "rewardRounding": "round"|"floor",
+  "rewardCalcMode": "aggregate"|"perTransaction",
   "sourceUrl": string|null,
   "note": string|null
 }`;

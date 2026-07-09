@@ -64,6 +64,18 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: true,
       comment: '商家關鍵字清單（換行或逗號分隔），比對時忽略大小寫與空白'
     },
+    rewardRounding: {
+      type: DataTypes.ENUM('round', 'floor'),
+      allowNull: false,
+      defaultValue: 'round',
+      comment: '回饋金額捨入方式：round=四捨五入 (預設), floor=無條件捨去，四捨五入/捨去至整數'
+    },
+    rewardCalcMode: {
+      type: DataTypes.ENUM('aggregate', 'perTransaction'),
+      allowNull: false,
+      defaultValue: 'aggregate',
+      comment: '回饋計算方式：aggregate=週期內消費加總後一次計算 (預設), perTransaction=每筆交易分別計算後加總'
+    },
     note: { type: DataTypes.TEXT, allowNull: true }
   }, {
     tableName: 'cashback_events',
