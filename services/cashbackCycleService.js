@@ -192,11 +192,17 @@ function matchMerchantKeyword(event, txn) {
   return { matched: false, keyword: null };
 }
 
-// Rounds (or floors) a reward amount to the nearest whole currency
-// unit/point per the event's rewardRounding setting ('round' is the
-// default when unset, matching the DB column default).
+// Rounds (or floors) a reward amount per the event's rewardRounding setting
+// ('round' is the default when unset) at rewardPrecision decimal places
+// ('rewardPrecision' defaults to 0 = whole currency unit/point, matching the
+// DB column defaults). Most campaigns round to the nearest whole unit, but
+// some compute to 2 decimal places (e.g. cents) before rounding/flooring.
 function roundReward(event, value) {
-  return event.rewardRounding === 'floor' ? Math.floor(value) : Math.round(value);
+  const precision = Number(event.rewardPrecision) || 0;
+  const factor = 10 ** precision;
+  const scaled = value * factor;
+  const rounded = event.rewardRounding === 'floor' ? Math.floor(scaled) : Math.round(scaled);
+  return rounded / factor;
 }
 
 /**
@@ -281,6 +287,7 @@ async function computeUsageForWindow(event, window, opts = {}) {
     remainingCapTransactions,
     rewardRounding: event.rewardRounding || 'round',
     rewardCalcMode: event.rewardCalcMode || 'aggregate',
+    rewardPrecision: Number(event.rewardPrecision) || 0,
     txnRewards
   };
   if (opts.includeTransactions) {

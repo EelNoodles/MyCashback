@@ -227,6 +227,7 @@ Authorization: Bearer &lt;你的 API 金鑰&gt;</code></pre>
           "requireMerchantMatch": false, "merchantKeywords": [],
           "rewardRounding": "round",       // round=四捨五入 (預設) / floor=無條件捨去
           "rewardCalcMode": "aggregate",   // aggregate=加總後整筆計算 (預設) / perTransaction=逐筆計算後加總
+          "rewardPrecision": 0,            // 捨入的小數位數 (預設 0=整數)；例如 2 代表算到小數點後兩位才捨入
           "paymentMethods": [{ "id": 1, "name": "LINE Pay" }],
           "sourceUrl": "...",
           "usage": {
@@ -235,7 +236,7 @@ Authorization: Bearer &lt;你的 API 金鑰&gt;</code></pre>
             "cap": 300, "capReached": false,
             "remainingCapAmount": 500,        // 還可刷多少即達上限（回饋%活動）
             "remainingCapTransactions": null, // 還可有幾筆符合門檻的交易（固定回饋活動）
-            "rewardRounding": "round", "rewardCalcMode": "aggregate",
+            "rewardRounding": "round", "rewardCalcMode": "aggregate", "rewardPrecision": 0,
             "txnRewards": null   // 只有 rewardCalcMode=perTransaction 時才有值：
                                  // [{ "transactionId": 1, "transactionAt": "...", "amount": 1280, "note": "...", "reward": 64 }, ...]
           }

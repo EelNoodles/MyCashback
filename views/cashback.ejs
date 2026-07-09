@@ -244,7 +244,7 @@
 
         <div class="bg-slate-50 rounded-xl p-3 space-y-2 border border-slate-200">
           <div class="text-xs font-medium text-slate-600">🧮 回饋計算方式</div>
-          <div class="grid grid-cols-2 gap-3">
+          <div class="grid grid-cols-3 gap-3">
             <label class="block">
               <span class="text-xs text-slate-500">金額捨入</span>
               <select name="rewardRounding" class="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">
@@ -259,8 +259,18 @@
                 <option value="perTransaction">每筆交易分別計算後加總</option>
               </select>
             </label>
+            <label class="block">
+              <span class="text-xs text-slate-500">捨入小數位數</span>
+              <select name="rewardPrecision" class="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">
+                <option value="0">整數（預設）</option>
+                <option value="1">小數點後 1 位</option>
+                <option value="2">小數點後 2 位</option>
+                <option value="3">小數點後 3 位</option>
+                <option value="4">小數點後 4 位</option>
+              </select>
+            </label>
           </div>
-          <div class="text-[10px] text-slate-400">「整筆計算」= 週期內符合資格的消費先加總，再乘一次 % 並捨入一次；「逐筆計算」= 每筆消費各自乘 % 並捨入，再加總 —— 兩種算法在有零頭金額時結果可能不同。</div>
+          <div class="text-[10px] text-slate-400">「整筆計算」= 週期內符合資格的消費先加總，再乘一次 % 並捨入一次；「逐筆計算」= 每筆消費各自乘 % 並捨入，再加總 —— 兩種算法在有零頭金額時結果可能不同。「捨入小數位數」= 大部分活動的回饋是直接捨入成整數（例如捨入到「元」或「點」），但少數活動的規則是先算到小數點後幾位才捨入（例如「消費金額 × 回饋% 取到小數點後兩位」），此時可將此設為 2，讓四捨五入/無條件捨去套用在小數點後第 2 位而不是整數位。</div>
         </div>
 
         <label class="block">

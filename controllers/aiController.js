@@ -73,6 +73,9 @@ const SYSTEM_PROMPT = `你是一個專門解析中文「信用卡 / 支付回饋
   14. rewardCalcMode 只能是 "aggregate" 或 "perTransaction"：文字提到「每筆消費分別計算」「單筆
       計算」「逐筆計算」時填 "perTransaction"；提到「期間內累積消費後計算」「加總後計算」「合併
       計算」時填 "aggregate"；完全沒提到計算方式時，一律預設填 "aggregate"。
+  15. rewardPrecision 為 0-6 的整數，代表回饋金額捨入時要保留到小數點後幾位：完全沒提到、或文字
+      顯示回饋是算到整數才捨入時填 0（預設）；文字提到「取到小數點後兩位」「保留小數點後2位」
+      「四捨五入至小數第二位」這類描述時，依文字中提到的位數填入對應數字（例如小數點後兩位填 2）。
 
 JSON Schema：
 {
@@ -94,6 +97,7 @@ JSON Schema：
   "merchantKeywords": string[],
   "rewardRounding": "round"|"floor",
   "rewardCalcMode": "aggregate"|"perTransaction",
+  "rewardPrecision": number,
   "sourceUrl": string|null,
   "note": string|null
 }`;

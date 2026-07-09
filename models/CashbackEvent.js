@@ -76,6 +76,13 @@ module.exports = (sequelize, DataTypes) => {
       defaultValue: 'aggregate',
       comment: '回饋計算方式：aggregate=週期內消費加總後一次計算 (預設), perTransaction=每筆交易分別計算後加總'
     },
+    rewardPrecision: {
+      type: DataTypes.TINYINT.UNSIGNED,
+      allowNull: false,
+      defaultValue: 0,
+      comment: '回饋金額捨入的小數位數 (0-6)：0=捨入至整數 (預設，適用大多數活動)；' +
+        '部分活動的回饋規則是先算到小數點後幾位才捨入，例如「消費金額 × 5%，取到小數點後兩位後四捨五入」需設為 2'
+    },
     note: { type: DataTypes.TEXT, allowNull: true }
   }, {
     tableName: 'cashback_events',

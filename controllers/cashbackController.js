@@ -222,6 +222,7 @@ function parsePayload(body) {
     sourceUrl,
     cycleType,
     cycleAnchorDay,
+    rewardPrecision,
     note,
     cardIds,
     paymentMethodIds
@@ -257,6 +258,9 @@ function parsePayload(body) {
     merchantKeywords: body.merchantKeywords ? String(body.merchantKeywords).trim().slice(0, 2000) || null : null,
     rewardRounding: body.rewardRounding === 'floor' ? 'floor' : 'round',
     rewardCalcMode: body.rewardCalcMode === 'perTransaction' ? 'perTransaction' : 'aggregate',
+    rewardPrecision: rewardPrecision === '' || rewardPrecision === null || rewardPrecision === undefined
+      ? 0
+      : Math.min(6, Math.max(0, parseInt(rewardPrecision, 10) || 0)),
     note: note || null
   };
 

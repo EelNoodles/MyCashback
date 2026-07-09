@@ -108,6 +108,14 @@
       .replace(/"/g, '&quot;');
   }
 
+  // "四捨五入" / "無條件捨去", plus "（至小數點後 N 位）" when the event
+  // rounds to a non-zero number of decimal places instead of a whole unit.
+  function roundingLabel(u) {
+    const base = u.rewardRounding === 'floor' ? '無條件捨去' : '四捨五入';
+    const precision = Number(u.rewardPrecision) || 0;
+    return precision > 0 ? `${base}（至小數點後${precision}位）` : base;
+  }
+
   const SPINNER_SVG = '<svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>';
 
   const NETWORK_LABELS = {
@@ -234,12 +242,11 @@
     }
 
     if (u.estimatedReward != null) {
-      const roundingLabel = u.rewardRounding === 'floor' ? '無條件捨去' : '四捨五入';
       const calcLabel = u.rewardCalcMode === 'perTransaction' ? '逐筆計算' : '整筆計算';
       const hasDetail = u.rewardCalcMode === 'perTransaction' && Array.isArray(u.txnRewards) && u.txnRewards.length > 0;
       body += `<div class="mt-1.5 pt-1.5 border-t border-slate-200 flex items-center justify-between gap-2">
         <span>💰 預估回饋 <strong class="text-brand-700">NT$${A.fmtNumber(u.estimatedReward)}</strong>
-          <span class="text-slate-400">（${roundingLabel}・${calcLabel}）</span>
+          <span class="text-slate-400">（${roundingLabel(u)}・${calcLabel}）</span>
         </span>
         ${hasDetail ? `<button type="button" class="js-reward-detail-btn text-brand-600 hover:underline flex-shrink-0" data-event-id="${ev.id}">查看明細</button>` : ''}
       </div>`;
@@ -268,11 +275,10 @@
         ${hasPerTxnRewards ? `<td class="py-1.5 text-right font-medium text-brand-700 whitespace-nowrap">+${A.fmtNumber(t.reward)}</td>` : ''}
       </tr>`).join('');
 
-    const roundingLabel = u.rewardRounding === 'floor' ? '無條件捨去' : '四捨五入';
     const formulaNote = hasPerTxnRewards
-      ? `每筆消費各自 × 回饋% 並${roundingLabel}後加總。`
+      ? `每筆消費各自 × 回饋% 並${roundingLabel(u)}後加總。`
       : (ev.cashbackPercent != null
-        ? `消費加總 NT$${A.fmtNumber(u.usedAmount)} × ${ev.cashbackPercent}% 後${roundingLabel}一次，得出總回饋（此活動採整筆計算，非逐筆加總，故不逐筆顯示回饋金額）。`
+        ? `消費加總 NT$${A.fmtNumber(u.usedAmount)} × ${ev.cashbackPercent}% 後${roundingLabel(u)}一次，得出總回饋（此活動採整筆計算，非逐筆加總，故不逐筆顯示回饋金額）。`
         : `此活動為固定回饋，符合門檻的交易各得 NT$${A.fmtNumber(ev.cashbackFixed)}。`);
 
     document.getElementById('rewardDetailTitle').textContent = `${ev.title} － 回饋明細`;
@@ -933,7 +939,6 @@
       return `<span class="pm-badge">💸 ${p.name}</span>`;
     }).join('');
 
-    const roundingLabel = u.rewardRounding === 'floor' ? '無條件捨去' : '四捨五入';
     const calcLabel = u.rewardCalcMode === 'perTransaction' ? '逐筆計算' : '整筆計算';
     const hasTxns = (u.transactions && u.transactions.length) || (u.txnRewards && u.txnRewards.length);
 
@@ -950,7 +955,7 @@
       <div class="mt-2 flex flex-wrap gap-1">${cardChips}${pmChips}</div>
       <div class="mt-2.5 pt-2.5 border-t border-slate-100 flex items-center justify-between gap-2">
         <div>
-          <div class="text-[11px] text-slate-400">💰 應得回饋（${roundingLabel}・${calcLabel}）</div>
+          <div class="text-[11px] text-slate-400">💰 應得回饋（${roundingLabel(u)}・${calcLabel}）</div>
           <div class="text-xl font-semibold text-brand-700">NT$${A.fmtNumber(u.estimatedReward)}</div>
         </div>
         ${hasTxns ? `<button type="button" class="js-reward-detail-btn text-xs text-brand-600 hover:underline border border-brand-200 rounded-lg px-2.5 py-1.5" data-event-id="${ev.id}">查看明細</button>` : ''}
@@ -1132,6 +1137,7 @@
       eventForm.minimumSpend.value = ev.minimumSpend ?? '';
       eventForm.rewardRounding.value = ev.rewardRounding === 'floor' ? 'floor' : 'round';
       eventForm.rewardCalcMode.value = ev.rewardCalcMode === 'perTransaction' ? 'perTransaction' : 'aggregate';
+      eventForm.rewardPrecision.value = ev.rewardPrecision ?? 0;
       eventForm.sourceUrl.value = ev.sourceUrl || '';
       eventForm.description.value = ev.description || '';
       eventForm.matchUnspecifiedPayment.checked = !!ev.matchUnspecifiedPayment;
@@ -1184,6 +1190,7 @@
         minimumSpend: eventForm.minimumSpend.value || null,
         rewardRounding: eventForm.rewardRounding.value === 'floor' ? 'floor' : 'round',
         rewardCalcMode: eventForm.rewardCalcMode.value === 'perTransaction' ? 'perTransaction' : 'aggregate',
+        rewardPrecision: eventForm.rewardPrecision.value || 0,
         sourceUrl: eventForm.sourceUrl.value || null,
         description: eventForm.description.value || null,
         matchUnspecifiedPayment: !!eventForm.matchUnspecifiedPayment.checked,
@@ -1268,6 +1275,7 @@
     eventForm.minimumSpend.value = r.minimumSpend ?? '';
     eventForm.rewardRounding.value = r.rewardRounding === 'floor' ? 'floor' : 'round';
     eventForm.rewardCalcMode.value = r.rewardCalcMode === 'perTransaction' ? 'perTransaction' : 'aggregate';
+    eventForm.rewardPrecision.value = Number.isInteger(r.rewardPrecision) ? Math.min(6, Math.max(0, r.rewardPrecision)) : 0;
     eventForm.sourceUrl.value = r.sourceUrl || '';
     eventForm.description.value = r.description || '';
     eventForm.cycleType.value = ['none', 'weekly', 'biweekly', 'monthly'].includes(r.cycleType) ? r.cycleType : 'none';
