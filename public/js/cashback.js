@@ -108,6 +108,16 @@
       .replace(/"/g, '&quot;');
   }
 
+  function parseMerchantKeywordsList(raw) {
+    return String(raw || '').split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
+  }
+
+  function merchantKeywordChipsHtml(raw) {
+    const keywords = parseMerchantKeywordsList(raw);
+    if (!keywords.length) return '<span class="text-slate-400">（尚未設定關鍵字）</span>';
+    return keywords.map((kw) => `<span class="pm-badge">${escapeHtml(kw)}</span>`).join('');
+  }
+
   // "四捨五入" / "無條件捨去", plus "（至小數點後 N 位）" when the event
   // rounds to a non-zero number of decimal places instead of a whole unit.
   function roundingLabel(u) {
@@ -436,6 +446,7 @@
         <div class="mb-2"><strong>回饋上限：</strong> ${ev.maxReward != null ? A.fmtNumber(ev.maxReward) : '—'}</div>
         <div class="mb-2"><strong>目前週期消費：</strong> <div class="mt-1">${usageCalloutHtml(ev)}</div></div>
         <div class="mb-2"><strong>適用卡片/支付：</strong> <div class="mt-1 flex flex-wrap gap-1">${tagsHtml}</div></div>
+        ${ev.requireMerchantMatch ? `<div class="mb-2"><strong>🏪 限定商家：</strong> <div class="mt-1 flex flex-wrap gap-1">${merchantKeywordChipsHtml(ev.merchantKeywords)}</div></div>` : ''}
         ${ev.description ? `<div class="mb-2"><strong>活動說明：</strong><p class="mt-1 whitespace-pre-wrap">${ev.description}</p></div>` : ''}
         ${ev.sourceUrl ? `<div class="mb-2"><strong>參考連結：</strong> <a href="${ev.sourceUrl}" target="_blank" class="text-brand-600 hover:underline break-all">${ev.sourceUrl}</a></div>` : ''}
       </div>
