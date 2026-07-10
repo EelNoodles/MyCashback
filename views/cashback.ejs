@@ -315,6 +315,33 @@
           </div>
         </div>
 
+        <div class="bg-slate-50 rounded-xl p-3 space-y-2 border border-slate-200">
+          <label class="flex items-start gap-2 text-xs text-slate-600">
+            <input id="excludeMerchantMatchInput" name="excludeMerchantMatch" type="checkbox" class="mt-0.5 rounded border-slate-300" />
+            <span><strong>排除商家</strong>：只要交易的備註/卡片/支付方式包含下列關鍵字其中一項，就<strong>完全不算入</strong>這個活動。此判斷優先於最低門檻等條件。適用於「排除非一般消費」的活動（例如排除全聯／超商／繳費）。</span>
+          </label>
+          <div id="excludeMerchantKeywordsWrap" class="hidden space-y-2">
+            <textarea name="excludeMerchantKeywords" rows="3" placeholder="每行一個關鍵字，符合任一即排除，例如：&#10;全聯&#10;繳費"
+                      class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
+            <div class="text-[10px] text-slate-400">比對時會忽略英文大小寫與空白，交易的備註/卡片/支付方式名稱中只要出現這段文字就會被排除。</div>
+
+            <div class="border-t border-slate-200 pt-2">
+              <button type="button" id="excludeMerchantAiBtn" class="text-xs text-brand-700 border border-brand-300 rounded-lg px-2 py-1 hover:bg-brand-50">✨ 用 AI 分析排除清單填入</button>
+              <div id="excludeMerchantAiBox" class="hidden mt-2 space-y-2">
+                <textarea id="excludeMerchantAiInput" rows="3" placeholder="貼上要排除的商家清單或活動說明文字，例如：不含全聯、超商、悠遊卡加值、水電瓦斯繳費...（AI 會整理成關鍵字並加到上面清單）"
+                          class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
+                <div class="flex justify-end gap-2">
+                  <button type="button" id="excludeMerchantAiCancelBtn" class="px-2 py-1 text-xs rounded-lg border border-slate-300">取消</button>
+                  <button type="button" id="excludeMerchantAiAnalyzeBtn" class="px-2 py-1 text-xs rounded-lg bg-brand-600 text-white hover:bg-brand-700">
+                    <span data-state="idle">分析並加入清單</span><span data-state="loading" class="hidden">分析中…</span>
+                  </button>
+                </div>
+                <div id="excludeMerchantAiError" class="hidden text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-2 py-1.5"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <label class="block">
           <span class="text-xs text-slate-500">原文連結</span>
           <input name="sourceUrl" type="url" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />

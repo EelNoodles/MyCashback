@@ -35,6 +35,8 @@ function eventToPublic(ev, usage) {
     matchUnspecifiedPayment: ev.matchUnspecifiedPayment,
     requireMerchantMatch: ev.requireMerchantMatch,
     merchantKeywords: ev.requireMerchantMatch ? parseMerchantKeywords(ev.merchantKeywords) : [],
+    excludeMerchantMatch: ev.excludeMerchantMatch,
+    excludeMerchantKeywords: ev.excludeMerchantMatch ? parseMerchantKeywords(ev.excludeMerchantKeywords) : [],
     rewardRounding: ev.rewardRounding,
     rewardCalcMode: ev.rewardCalcMode,
     rewardPrecision: ev.rewardPrecision,

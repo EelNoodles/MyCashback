@@ -76,6 +76,12 @@ const SYSTEM_PROMPT = `你是一個專門解析中文「信用卡 / 支付回饋
   15. rewardPrecision 為 0-6 的整數，代表回饋金額捨入時要保留到小數點後幾位：完全沒提到、或文字
       顯示回饋是算到整數才捨入時填 0（預設）；文字提到「取到小數點後兩位」「保留小數點後2位」
       「四捨五入至小數第二位」這類描述時，依文字中提到的位數填入對應數字（例如小數點後兩位填 2）。
+  16. excludeMerchantMatch 為布林值：只有當文字明確指出「排除／不含／不適用某些商家或通路」時才填
+      true，其餘一律 false；若為 false，excludeMerchantKeywords 固定回空陣列 []。
+  17. excludeMerchantKeywords 為字串陣列：當 excludeMerchantMatch 為 true 時，把文字中「被排除」的
+      商家或消費類型各萃取一個能唯一辨識的核心關鍵字（規則同 merchantKeywords，去除地址／分店／
+      標點），例如「不含全聯、超商、水電瓦斯繳費」-> ["全聯","超商","繳費"]。注意這是「命中即排除」，
+      與 merchantKeywords（命中才計入）方向相反，兩者不要混用。
 
 JSON Schema：
 {
@@ -95,6 +101,8 @@ JSON Schema：
   "matchUnspecifiedPayment": boolean,
   "requireMerchantMatch": boolean,
   "merchantKeywords": string[],
+  "excludeMerchantMatch": boolean,
+  "excludeMerchantKeywords": string[],
   "rewardRounding": "round"|"floor",
   "rewardCalcMode": "aggregate"|"perTransaction",
   "rewardPrecision": number,
