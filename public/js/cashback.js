@@ -39,6 +39,14 @@
   const merchantAiCancelBtn = document.getElementById('merchantAiCancelBtn');
   const merchantAiAnalyzeBtn = document.getElementById('merchantAiAnalyzeBtn');
   const merchantAiError = document.getElementById('merchantAiError');
+  const excludeMerchantMatchInput = document.getElementById('excludeMerchantMatchInput');
+  const excludeMerchantKeywordsWrap = document.getElementById('excludeMerchantKeywordsWrap');
+  const excludeMerchantAiBtn = document.getElementById('excludeMerchantAiBtn');
+  const excludeMerchantAiBox = document.getElementById('excludeMerchantAiBox');
+  const excludeMerchantAiInput = document.getElementById('excludeMerchantAiInput');
+  const excludeMerchantAiCancelBtn = document.getElementById('excludeMerchantAiCancelBtn');
+  const excludeMerchantAiAnalyzeBtn = document.getElementById('excludeMerchantAiAnalyzeBtn');
+  const excludeMerchantAiError = document.getElementById('excludeMerchantAiError');
 
   // AI
   const aiInput = document.getElementById('aiInput');
@@ -447,6 +455,7 @@
         <div class="mb-2"><strong>目前週期消費：</strong> <div class="mt-1">${usageCalloutHtml(ev)}</div></div>
         <div class="mb-2"><strong>適用卡片/支付：</strong> <div class="mt-1 flex flex-wrap gap-1">${tagsHtml}</div></div>
         ${ev.requireMerchantMatch ? `<div class="mb-2"><strong>🏪 限定商家：</strong> <div class="mt-1 flex flex-wrap gap-1">${merchantKeywordChipsHtml(ev.merchantKeywords)}</div></div>` : ''}
+        ${ev.excludeMerchantMatch ? `<div class="mb-2"><strong>🚫 排除商家：</strong> <div class="mt-1 flex flex-wrap gap-1">${merchantKeywordChipsHtml(ev.excludeMerchantKeywords)}</div></div>` : ''}
         ${ev.description ? `<div class="mb-2"><strong>活動說明：</strong><p class="mt-1 whitespace-pre-wrap">${ev.description}</p></div>` : ''}
         ${ev.sourceUrl ? `<div class="mb-2"><strong>參考連結：</strong> <a href="${ev.sourceUrl}" target="_blank" class="text-brand-600 hover:underline break-all">${ev.sourceUrl}</a></div>` : ''}
       </div>
@@ -549,6 +558,56 @@
       A.showError(merchantAiError, err.message);
     } finally {
       A.setLoading(merchantAiAnalyzeBtn, false);
+    }
+  });
+
+  // ─── Merchant-exclusion form UX ───
+  function updateExcludeMerchantKeywordsUI() {
+    excludeMerchantKeywordsWrap.classList.toggle('hidden', !excludeMerchantMatchInput.checked);
+  }
+  excludeMerchantMatchInput?.addEventListener('change', updateExcludeMerchantKeywordsUI);
+
+  // Same append-only merge behaviour as mergeMerchantKeywords(), but for the
+  // exclusion list textarea.
+  function mergeExcludeMerchantKeywords(newKeywords) {
+    const existing = eventForm.excludeMerchantKeywords.value.split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
+    const seen = new Set(existing.map((s) => s.toUpperCase()));
+    for (const raw of newKeywords) {
+      const kw = String(raw || '').trim();
+      const norm = kw.toUpperCase();
+      if (norm && !seen.has(norm)) {
+        existing.push(kw);
+        seen.add(norm);
+      }
+    }
+    eventForm.excludeMerchantKeywords.value = existing.join('\n');
+  }
+
+  excludeMerchantAiBtn?.addEventListener('click', () => {
+    A.showError(excludeMerchantAiError, '');
+    excludeMerchantAiBox.classList.toggle('hidden');
+  });
+  excludeMerchantAiCancelBtn?.addEventListener('click', () => {
+    excludeMerchantAiBox.classList.add('hidden');
+    excludeMerchantAiInput.value = '';
+    A.showError(excludeMerchantAiError, '');
+  });
+  excludeMerchantAiAnalyzeBtn?.addEventListener('click', async () => {
+    const text = excludeMerchantAiInput.value.trim();
+    if (!text) { excludeMerchantAiInput.focus(); return; }
+    A.setLoading(excludeMerchantAiAnalyzeBtn, true);
+    A.showError(excludeMerchantAiError, '');
+    try {
+      const data = await A.jsonFetch(A.api('/ai/parse-merchants'), {
+        method: 'POST', body: { text, model: state.aiModel || undefined }
+      });
+      mergeExcludeMerchantKeywords(Array.isArray(data.keywords) ? data.keywords : []);
+      excludeMerchantAiBox.classList.add('hidden');
+      excludeMerchantAiInput.value = '';
+    } catch (err) {
+      A.showError(excludeMerchantAiError, err.message);
+    } finally {
+      A.setLoading(excludeMerchantAiAnalyzeBtn, false);
     }
   });
 
@@ -1154,6 +1213,8 @@
       eventForm.matchUnspecifiedPayment.checked = !!ev.matchUnspecifiedPayment;
       eventForm.requireMerchantMatch.checked = !!ev.requireMerchantMatch;
       eventForm.merchantKeywords.value = ev.merchantKeywords || '';
+      eventForm.excludeMerchantMatch.checked = !!ev.excludeMerchantMatch;
+      eventForm.excludeMerchantKeywords.value = ev.excludeMerchantKeywords || '';
       (ev.cards || []).forEach((c) => state.selectedCardIds.add(c.id));
       (ev.paymentMethods || []).forEach((p) => state.selectedPmIds.add(p.id));
       deleteEventBtn.classList.remove('hidden');
@@ -1165,6 +1226,7 @@
 
     updateCycleUI();
     updateMerchantKeywordsUI();
+    updateExcludeMerchantKeywordsUI();
 
     cardChipsBox.innerHTML = '';
     pmChipsBox.innerHTML = '';
@@ -1207,6 +1269,8 @@
         matchUnspecifiedPayment: !!eventForm.matchUnspecifiedPayment.checked,
         requireMerchantMatch: !!eventForm.requireMerchantMatch.checked,
         merchantKeywords: eventForm.merchantKeywords.value || null,
+        excludeMerchantMatch: !!eventForm.excludeMerchantMatch.checked,
+        excludeMerchantKeywords: eventForm.excludeMerchantKeywords.value || null,
         cardIds: Array.from(state.selectedCardIds),
         paymentMethodIds: Array.from(state.selectedPmIds)
       };
@@ -1295,8 +1359,12 @@
     const aiKeywords = Array.isArray(r.merchantKeywords) ? r.merchantKeywords.filter(Boolean) : [];
     eventForm.requireMerchantMatch.checked = !!r.requireMerchantMatch && aiKeywords.length > 0;
     eventForm.merchantKeywords.value = aiKeywords.join('\n');
+    const aiExcludeKeywords = Array.isArray(r.excludeMerchantKeywords) ? r.excludeMerchantKeywords.filter(Boolean) : [];
+    eventForm.excludeMerchantMatch.checked = !!r.excludeMerchantMatch && aiExcludeKeywords.length > 0;
+    eventForm.excludeMerchantKeywords.value = aiExcludeKeywords.join('\n');
     updateCycleUI();
     updateMerchantKeywordsUI();
+    updateExcludeMerchantKeywordsUI();
 
     // Best-effort fuzzy match cardNames / paymentMethodNames against existing tags
     const lower = (s) => String(s || '').toLowerCase().trim();

@@ -256,6 +256,8 @@ function parsePayload(body) {
     matchUnspecifiedPayment: !!body.matchUnspecifiedPayment,
     requireMerchantMatch: !!body.requireMerchantMatch,
     merchantKeywords: body.merchantKeywords ? String(body.merchantKeywords).trim().slice(0, 2000) || null : null,
+    excludeMerchantMatch: !!body.excludeMerchantMatch,
+    excludeMerchantKeywords: body.excludeMerchantKeywords ? String(body.excludeMerchantKeywords).trim().slice(0, 2000) || null : null,
     rewardRounding: body.rewardRounding === 'floor' ? 'floor' : 'round',
     rewardCalcMode: body.rewardCalcMode === 'perTransaction' ? 'perTransaction' : 'aggregate',
     rewardPrecision: rewardPrecision === '' || rewardPrecision === null || rewardPrecision === undefined

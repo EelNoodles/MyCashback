@@ -127,6 +127,10 @@ function paymentMatches(event, paymentMethodId) {
  * count towards"), including ones from past cycles.
  */
 function eventMatchesTransaction(event, txn) {
+  // 「排除商家」優先於所有其他條件（含最低門檻）：一旦交易命中排除清單，
+  // 就完全不符合此活動。
+  if (matchExcludeMerchantKeyword(event, txn).matched) return false;
+
   const minSpend = event.minimumSpend != null ? Number(event.minimumSpend) : null;
   if (minSpend != null && minSpend > 0 && Number(txn.amount) < minSpend) return false;
 
@@ -173,6 +177,20 @@ function transactionHaystack(txn) {
   return normalizeForMatch(parts.join(' '));
 }
 
+// First configured keyword (original casing, as the user typed it) found —
+// case/whitespace-insensitively — within the transaction's text fields, or
+// null when none of them appear.
+function firstKeywordInTransaction(rawKeywords, txn) {
+  const keywords = parseMerchantKeywords(rawKeywords);
+  if (!keywords.length) return null;
+  const haystack = transactionHaystack(txn);
+  for (const kw of keywords) {
+    const normKw = normalizeForMatch(kw);
+    if (normKw && haystack.includes(normKw)) return kw;
+  }
+  return null;
+}
+
 /**
  * Returns { matched, keyword } — `keyword` is the first configured keyword
  * (original casing, as the user typed it) found within the transaction's
@@ -181,15 +199,23 @@ function transactionHaystack(txn) {
  */
 function matchMerchantKeyword(event, txn) {
   if (!event.requireMerchantMatch) return { matched: true, keyword: null };
-  const keywords = parseMerchantKeywords(event.merchantKeywords);
-  if (!keywords.length) return { matched: false, keyword: null };
+  const keyword = firstKeywordInTransaction(event.merchantKeywords, txn);
+  return { matched: !!keyword, keyword };
+}
 
-  const haystack = transactionHaystack(txn);
-  for (const kw of keywords) {
-    const normKw = normalizeForMatch(kw);
-    if (normKw && haystack.includes(normKw)) return { matched: true, keyword: kw };
-  }
-  return { matched: false, keyword: null };
+// ─────────────────────────────────────────────────────────────
+// "排除商家" (merchant exclusion): most campaigns exclude non-general
+// spending (e.g. 全聯/超商/繳費). When enabled, a transaction whose merchant
+// text hits one of the exclusion keywords is dropped from the campaign
+// entirely — this gate takes precedence over minimumSpend and every other
+// rule. Returns { matched, keyword }, where matched:true means the
+// transaction IS excluded. When exclusion is off (or no keywords set), this
+// always reports matched:false so nothing is excluded.
+// ─────────────────────────────────────────────────────────────
+function matchExcludeMerchantKeyword(event, txn) {
+  if (!event.excludeMerchantMatch) return { matched: false, keyword: null };
+  const keyword = firstKeywordInTransaction(event.excludeMerchantKeywords, txn);
+  return { matched: !!keyword, keyword };
 }
 
 // Rounds (or floors) a reward amount per the event's rewardRounding setting
@@ -226,9 +252,15 @@ async function computeUsageForWindow(event, window, opts = {}) {
     order: [['transactionAt', 'ASC']],
     raw: true
   });
-  const matched = event.requireMerchantMatch
-    ? rows.filter((r) => matchMerchantKeyword(event, r).matched)
-    : rows;
+  // 「排除商家」優先：先剔除命中排除清單的交易（含未達門檻以外的判斷），
+  // 再套用「商家限定」的必須符合條件。
+  let matched = rows;
+  if (event.excludeMerchantMatch) {
+    matched = matched.filter((r) => !matchExcludeMerchantKeyword(event, r).matched);
+  }
+  if (event.requireMerchantMatch) {
+    matched = matched.filter((r) => matchMerchantKeyword(event, r).matched);
+  }
 
   const usedAmount = matched.reduce((sum, r) => sum + Number(r.amount), 0);
   const txnCount = matched.length;
@@ -328,6 +360,7 @@ module.exports = {
   buildMatchWhere,
   eventMatchesTransaction,
   matchMerchantKeyword,
+  matchExcludeMerchantKeyword,
   parseMerchantKeywords,
   computeEventUsage,
   computeEventUsageInWindow

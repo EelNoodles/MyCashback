@@ -64,6 +64,18 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: true,
       comment: '商家關鍵字清單（換行或逗號分隔），比對時忽略大小寫與空白'
     },
+    excludeMerchantMatch: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment: '「排除商家」：一旦交易的備註/卡片/支付方式包含 excludeMerchantKeywords 其中一項，' +
+        '就完全不符合此活動；此判斷優先於最低門檻等其他條件（例如活動排除全聯/超商/繳費）'
+    },
+    excludeMerchantKeywords: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: '排除商家關鍵字清單（換行或逗號分隔），比對時忽略大小寫與空白'
+    },
     rewardRounding: {
       type: DataTypes.ENUM('round', 'floor'),
       allowNull: false,

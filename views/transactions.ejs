@@ -225,6 +225,7 @@ Authorization: Bearer &lt;你的 API 金鑰&gt;</code></pre>
           "cycleType": "monthly", "cycleAnchorDay": 1,
           "matchUnspecifiedPayment": true,
           "requireMerchantMatch": false, "merchantKeywords": [],
+          "excludeMerchantMatch": false, "excludeMerchantKeywords": [],  // 命中即排除，優先於最低門檻
           "rewardRounding": "round",       // round=四捨五入 (預設) / floor=無條件捨去
           "rewardCalcMode": "aggregate",   // aggregate=加總後整筆計算 (預設) / perTransaction=逐筆計算後加總
           "rewardPrecision": 0,            // 捨入的小數位數 (預設 0=整數)；例如 2 代表算到小數點後兩位才捨入
