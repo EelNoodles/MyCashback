@@ -1058,7 +1058,10 @@
     if (state.ra.pmId) params.set('paymentMethodId', state.ra.pmId);
     if (state.ra.q) params.set('q', state.ra.q);
 
-    if (state.ra.range === 'thisMonth' || state.ra.range === 'lastMonth') {
+    if (state.ra.range === 'prevCycle') {
+      // Each event's own previously-closed cycle — computed per-event on the server.
+      params.set('range', 'prevCycle');
+    } else if (state.ra.range === 'thisMonth' || state.ra.range === 'lastMonth') {
       const r = raPresetRange(state.ra.range);
       params.set('range', 'range');
       params.set('from', r.from);
@@ -1082,7 +1085,10 @@
       state.ra.events = data.events || [];
       listEl.innerHTML = '';
       if (!state.ra.events.length) {
-        listEl.innerHTML = '<div class="text-sm text-slate-400 col-span-full">沒有符合條件的活動</div>';
+        const emptyMsg = state.ra.range === 'prevCycle'
+          ? '沒有已結算的上一個區間可顯示（僅適用有週期、且已完成至少一個區間的活動）'
+          : '沒有符合條件的活動';
+        listEl.innerHTML = `<div class="text-sm text-slate-400 col-span-full">${emptyMsg}</div>`;
         return;
       }
       for (const ev of state.ra.events) listEl.appendChild(rewardAuditCardEl(ev));
