@@ -7,7 +7,12 @@ const {
   Card,
   PaymentMethod
 } = require('../models');
-const { computeEventUsage, computeEventUsageInWindow, getCurrentCycleWindow } = require('../services/cashbackCycleService');
+const {
+  computeEventUsage,
+  computeEventUsageInWindow,
+  getCurrentCycleWindow,
+  getPreviousCycleWindow
+} = require('../services/cashbackCycleService');
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -168,6 +173,7 @@ exports.rewardsAudit = async (req, res, next) => {
     });
 
     const useCustomRange = req.query.range === 'range';
+    const usePrevCycle = req.query.range === 'prevCycle';
     let rangeStart = null;
     let rangeEnd = null;
     if (useCustomRange) {
@@ -178,9 +184,18 @@ exports.rewardsAudit = async (req, res, next) => {
       }
     }
 
+    const now = new Date();
     const results = [];
     for (const ev of events) {
-      const window = useCustomRange ? { start: rangeStart, end: rangeEnd } : getCurrentCycleWindow(ev, new Date());
+      let window;
+      if (useCustomRange) {
+        window = { start: rangeStart, end: rangeEnd };
+      } else if (usePrevCycle) {
+        window = getPreviousCycleWindow(ev, now);
+        if (!window) continue; // no closed previous cycle for this event → omit
+      } else {
+        window = getCurrentCycleWindow(ev, now);
+      }
       const usage = await computeEventUsageInWindow(ev, window);
       if (!usage) continue; // no linked cards, nothing to compute
       const json = ev.toJSON();
@@ -189,7 +204,7 @@ exports.rewardsAudit = async (req, res, next) => {
     }
 
     res.json({
-      range: useCustomRange ? 'range' : 'cycle',
+      range: useCustomRange ? 'range' : (usePrevCycle ? 'prevCycle' : 'cycle'),
       from: rangeStart,
       to: rangeEnd,
       events: results

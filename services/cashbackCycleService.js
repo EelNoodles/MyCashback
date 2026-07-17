@@ -36,6 +36,17 @@ function endOfDay(dateOnly) {
   return d;
 }
 
+// The reset date one cycle length before `reset` — i.e. the start of the
+// cycle that `reset` closes. Monthly steps back a calendar month (keeping the
+// anchor day-of-month); weekly/biweekly step back a fixed number of days.
+function cycleStartBefore(reset, cycleType) {
+  if (cycleType === 'monthly') {
+    return new Date(reset.getFullYear(), reset.getMonth() - 1, reset.getDate());
+  }
+  const days = cycleType === 'weekly' ? 7 : 14;
+  return new Date(reset.getTime() - days * 86400000);
+}
+
 /**
  * Returns the [start, end) window that "the current cycle" covers for this
  * event, clamped to the event's own startDate/endDate. `end` is exclusive.
@@ -52,16 +63,44 @@ function getCurrentCycleWindow(event, now = new Date()) {
   const nextReset = getNextResetDate(now, event.cycleType, event.cycleAnchorDay);
   if (!nextReset) return { start: eventStart, end: eventEnd };
 
-  let start;
-  if (event.cycleType === 'monthly') {
-    start = new Date(nextReset.getFullYear(), nextReset.getMonth() - 1, nextReset.getDate());
-  } else {
-    const days = event.cycleType === 'weekly' ? 7 : 14;
-    start = new Date(nextReset.getTime() - days * 86400000);
-  }
+  let start = cycleStartBefore(nextReset, event.cycleType);
 
   if (eventStart && start < eventStart) start = eventStart;
   const end = eventEnd && nextReset > eventEnd ? eventEnd : nextReset;
+
+  return { start, end };
+}
+
+/**
+ * Returns the [start, end) window of the cycle immediately BEFORE the current
+ * one — the most recently closed cycle — clamped to the event's own
+ * startDate/endDate. Used by the reconciliation view's「上一個區間」so the user
+ * can check the reward that already settled last cycle.
+ *
+ * Returns null when there is no such closed cycle to show: non-cyclic events
+ * (cycleType 'none' have no cycles), or events whose previous cycle would fall
+ * entirely before the event's own start date (they haven't completed a cycle
+ * yet).
+ */
+function getPreviousCycleWindow(event, now = new Date()) {
+  if (!event.cycleType || event.cycleType === 'none') return null;
+
+  const nextReset = getNextResetDate(now, event.cycleType, event.cycleAnchorDay);
+  if (!nextReset) return null;
+
+  const eventStart = event.startDate ? new Date(`${event.startDate}T00:00:00`) : null;
+  const eventEnd = event.endDate ? endOfDay(`${event.endDate}T00:00:00`) : null;
+
+  // currentStart is where the current cycle begins == where the previous
+  // cycle ends (exclusive).
+  const currentStart = cycleStartBefore(nextReset, event.cycleType);
+  let start = cycleStartBefore(currentStart, event.cycleType);
+  let end = currentStart;
+
+  // Previous cycle sits entirely before the event began → no prior cycle yet.
+  if (eventStart && end <= eventStart) return null;
+  if (eventStart && start < eventStart) start = eventStart;
+  if (eventEnd && end > eventEnd) end = eventEnd;
 
   return { start, end };
 }
@@ -357,6 +396,7 @@ async function computeEventUsageInWindow(event, window) {
 module.exports = {
   getNextResetDate,
   getCurrentCycleWindow,
+  getPreviousCycleWindow,
   buildMatchWhere,
   eventMatchesTransaction,
   matchMerchantKeyword,
