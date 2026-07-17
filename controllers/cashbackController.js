@@ -55,7 +55,8 @@ exports.list = async (req, res, next) => {
         [Op.or]: [
           { title: { [Op.like]: `%${q}%` } },
           { description: { [Op.like]: `%${q}%` } },
-          { note: { [Op.like]: `%${q}%` } }
+          { note: { [Op.like]: `%${q}%` } },
+          { merchantKeywords: { [Op.like]: `%${q}%` } }
         ]
       }]);
     }
