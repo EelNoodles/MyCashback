@@ -49,6 +49,25 @@
           </select>
         </label>
       </div>
+      <div class="flex flex-wrap items-end gap-3">
+        <label class="block flex-1 min-w-[9rem] sm:flex-none">
+          <span class="text-xs text-slate-500">交易日期（起）</span>
+          <input id="fromInput" type="date"
+                 class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        </label>
+        <label class="block flex-1 min-w-[9rem] sm:flex-none">
+          <span class="text-xs text-slate-500">交易日期（迄）</span>
+          <input id="toInput" type="date"
+                 class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        </label>
+        <div id="rangePresets" class="flex flex-wrap gap-1.5 pb-0.5">
+          <button type="button" data-range="thisMonth" class="px-2.5 py-1.5 text-xs rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50">本月</button>
+          <button type="button" data-range="lastMonth" class="px-2.5 py-1.5 text-xs rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50">上月</button>
+          <button type="button" data-range="last30" class="px-2.5 py-1.5 text-xs rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50">近 30 天</button>
+          <button type="button" data-range="clear" class="px-2.5 py-1.5 text-xs rounded-lg border border-slate-300 text-slate-500 hover:bg-slate-50">清除日期</button>
+        </div>
+      </div>
+      <div id="rangeError" class="hidden text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2"></div>
     </section>
 
     <!-- Results -->

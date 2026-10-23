@@ -196,9 +196,14 @@ exports.list = async (req, res, next) => {
       where.paymentMethodId = parseInt(req.query.paymentMethodId, 10);
     }
     if (req.query.from || req.query.to) {
+      const from = req.query.from ? new Date(req.query.from) : null;
+      const to = req.query.to ? new Date(req.query.to) : null;
+      if ((from && Number.isNaN(from.getTime())) || (to && Number.isNaN(to.getTime()))) {
+        return res.status(400).json({ error: 'DATE_RANGE_INVALID', message: 'from/to 需為可解析的日期時間字串' });
+      }
       where.transactionAt = {};
-      if (req.query.from) where.transactionAt[Op.gte] = new Date(req.query.from);
-      if (req.query.to) where.transactionAt[Op.lte] = new Date(req.query.to);
+      if (from) where.transactionAt[Op.gte] = from;
+      if (to) where.transactionAt[Op.lte] = to;
     }
     if (req.query.q) {
       where.note = { [Op.like]: `%${String(req.query.q).trim()}%` };
