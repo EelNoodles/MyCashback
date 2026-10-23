@@ -8,6 +8,10 @@
   const cardFilter = document.getElementById('cardFilter');
   const pmFilter = document.getElementById('pmFilter');
   const sourceFilter = document.getElementById('sourceFilter');
+  const fromInput = document.getElementById('fromInput');
+  const toInput = document.getElementById('toInput');
+  const rangePresets = document.getElementById('rangePresets');
+  const rangeError = document.getElementById('rangeError');
   const newTxnBtn = document.getElementById('newTxnBtn');
   const apiKeysBtn = document.getElementById('apiKeysBtn');
 
@@ -34,9 +38,15 @@
     cardId: '',
     pmId: '',
     source: '',
+    from: '',
+    to: '',
     page: 1,
-    pageSize: 50
+    pageSize: 10
   };
+
+  // Bumped on every list request so a slow, stale response (e.g. from a
+  // filter the user has since changed) never overwrites a newer one.
+  let loadSeq = 0;
 
   function debounce(fn, ms) {
     let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
@@ -53,6 +63,20 @@
     const d = iso ? new Date(iso) : new Date();
     const pad = (n) => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  // <input type="date"> wants "YYYY-MM-DD" in local time.
+  function toDateInputValue(d) {
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+
+  // Date inputs are whole local days: "from" starts at 00:00:00.000 and "to"
+  // ends at 23:59:59.999, sent as ISO so the server compares in UTC correctly.
+  function dayBoundaryIso(value, endOfDay) {
+    const [y, m, d] = value.split('-').map(Number);
+    const dt = endOfDay ? new Date(y, m - 1, d, 23, 59, 59, 999) : new Date(y, m - 1, d);
+    return dt.toISOString();
   }
 
   // ─── Loaders ───
@@ -129,16 +153,21 @@
   }
 
   async function loadTxns() {
+    const seq = ++loadSeq;
     txnList.innerHTML = '<div class="px-4 py-6 text-center text-slate-400 text-sm">載入中…</div>';
+    pager.querySelectorAll('button').forEach((b) => { b.disabled = true; });
     const params = new URLSearchParams();
     if (state.q) params.set('q', state.q);
     if (state.cardId) params.set('cardId', state.cardId);
     if (state.pmId) params.set('paymentMethodId', state.pmId);
     if (state.source) params.set('source', state.source);
+    if (state.from) params.set('from', dayBoundaryIso(state.from, false));
+    if (state.to) params.set('to', dayBoundaryIso(state.to, true));
     params.set('page', state.page);
     params.set('pageSize', state.pageSize);
     try {
       const data = await A.jsonFetch(A.api('/transactions?' + params.toString()));
+      if (seq !== loadSeq) return;
       const items = data.items || [];
       txnList.innerHTML = '';
       if (!items.length) {
@@ -157,6 +186,7 @@
       document.getElementById('prevPageBtn')?.addEventListener('click', () => { state.page--; loadTxns(); });
       document.getElementById('nextPageBtn')?.addEventListener('click', () => { state.page++; loadTxns(); });
     } catch (err) {
+      if (seq !== loadSeq) return;
       txnList.innerHTML = `<div class="px-4 py-6 text-center text-rose-500 text-sm">載入失敗：${escapeHtml(err.message)}</div>`;
     }
   }
@@ -166,6 +196,48 @@
   cardFilter.addEventListener('change', () => { state.cardId = cardFilter.value; state.page = 1; loadTxns(); });
   pmFilter.addEventListener('change', () => { state.pmId = pmFilter.value; state.page = 1; loadTxns(); });
   sourceFilter.addEventListener('change', () => { state.source = sourceFilter.value; state.page = 1; loadTxns(); });
+
+  function applyDateRange() {
+    const from = fromInput.value;
+    const to = toInput.value;
+    // Keep the native pickers from offering an inverted range.
+    toInput.min = from;
+    fromInput.max = to;
+    if (from && to && from > to) {
+      A.showError(rangeError, '起始日期不可晚於結束日期');
+      return;
+    }
+    A.showError(rangeError, '');
+    if (from === state.from && to === state.to) return;
+    state.from = from;
+    state.to = to;
+    state.page = 1;
+    loadTxns();
+  }
+
+  fromInput.addEventListener('change', applyDateRange);
+  toInput.addEventListener('change', applyDateRange);
+
+  rangePresets.addEventListener('click', (e) => {
+    const range = e.target.closest('[data-range]')?.dataset.range;
+    if (!range) return;
+    const now = new Date();
+    let from = '';
+    let to = '';
+    if (range === 'thisMonth') {
+      from = toDateInputValue(new Date(now.getFullYear(), now.getMonth(), 1));
+      to = toDateInputValue(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+    } else if (range === 'lastMonth') {
+      from = toDateInputValue(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+      to = toDateInputValue(new Date(now.getFullYear(), now.getMonth(), 0));
+    } else if (range === 'last30') {
+      from = toDateInputValue(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29));
+      to = toDateInputValue(now);
+    }
+    fromInput.value = from;
+    toInput.value = to;
+    applyDateRange();
+  });
 
   // ─── Transaction modal ───
   function openTxnModal(t) {
