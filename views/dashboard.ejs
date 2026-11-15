@@ -19,7 +19,7 @@
         <div class="text-sm font-medium text-white/80">本期應得回饋</div>
         <div class="mt-1 text-4xl font-extrabold tracking-tight money" id="heroReward"><span class="inline-block h-9 w-32 animate-pulse rounded-lg bg-white/20"></span></div>
         <div class="mt-1 text-sm text-white/85" id="heroRemaining">&nbsp;</div>
-        <div class="mt-4 grid grid-cols-3 gap-2 border-t border-white/15 pt-3 text-xs text-white/75">
+        <div class="mt-4 grid grid-cols-3 gap-2 border-t border-white/15 pt-3 text-xs text-white/75 [&>div]:min-w-0 [&>div>div:last-child]:break-words">
           <div><div>本月刷卡</div><div class="mt-0.5 text-[15px] font-bold text-white money" id="heroSpend">—</div></div>
           <div><div>本月入帳</div><div class="mt-0.5 text-[15px] font-bold text-white money" id="heroReceived">—</div></div>
           <div><div>進行中活動</div><div class="mt-0.5 text-[15px] font-bold text-white" id="heroEvents">—</div></div>
@@ -41,16 +41,21 @@
 
     <section>
       <h2 class="section-title"><span>本期進行中活動</span><a href="<%= url('/cashback') %>">全部</a></h2>
-      <div id="eventsList" class="grid gap-3 md:grid-cols-2"><div class="skeleton h-28"></div><div class="skeleton h-28"></div></div>
+      <div id="eventsList" class="grid grid-cols-1 gap-3 md:grid-cols-2"><div class="skeleton h-28"></div><div class="skeleton h-28"></div></div>
     </section>
 
     <section>
       <h2 class="section-title"><span>點數</span><a href="<%= url('/points') %>">管理</a></h2>
-      <a href="<%= url('/points') %>" class="card card-link card-pad grid grid-cols-3 gap-3" id="pointsCard">
-        <div><div class="stat-label">點數總價值</div><div class="stat-value money" id="ptValue">—</div></div>
-        <div><div class="stat-label">本月獲得</div><div class="stat-value text-emerald-600 dark:text-emerald-400 money" id="ptEarned">—</div></div>
-        <div><div class="stat-label">本月使用</div><div class="stat-value text-rose-600 dark:text-rose-400 money" id="ptSpent">—</div></div>
-      </a>
+      <div class="card overflow-hidden" id="pointsCard">
+        <div class="flex flex-wrap items-end justify-between gap-x-4 gap-y-2 p-4">
+          <div class="min-w-0"><div class="stat-label">點數總價值</div><div class="text-2xl font-extrabold tracking-tight money" id="ptValue">—</div></div>
+          <div class="flex gap-4 text-right">
+            <div><div class="stat-label">本月獲得</div><div class="text-base font-bold text-emerald-600 dark:text-emerald-400 money" id="ptEarned">—</div></div>
+            <div><div class="stat-label">本月使用</div><div class="text-base font-bold text-rose-600 dark:text-rose-400 money" id="ptSpent">—</div></div>
+          </div>
+        </div>
+        <div class="list border-t border-slate-100 dark:border-slate-800" id="pointsList"><div class="p-4"><div class="skeleton h-10"></div></div></div>
+      </div>
     </section>
 
     <section>

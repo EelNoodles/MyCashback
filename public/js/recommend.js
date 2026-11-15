@@ -31,7 +31,7 @@
     if (c.capBefore) badges.push('<span class="badge badge-slate">已滿額</span>');
     else if (c.capReachedAfter) badges.push('<span class="badge badge-green">刷完滿額</span>');
     if (c.thresholdMetAfter === false) badges.push(`<span class="badge badge-amber">還差 ${F.money(c.remainingToThresholdAfter, { decimals: 0 })} 達門檻</span>`);
-    if (c.merchantKeyword) badges.push(`<span class="badge badge-brand">${esc(c.merchantKeyword)}</span>`);
+    if (c.merchantKeyword) badges.push(`<span class="badge badge-brand"><span class="truncate">${esc(c.merchantKeyword)}</span></span>`);
     return `<li class="flex items-start justify-between gap-3 py-1.5">
       <span class="min-w-0"><span class="text-[13px] font-medium">${esc(c.title)}</span>${badges.length ? `<span class="mt-1 flex flex-wrap gap-1">${badges.join('')}</span>` : ''}</span>
       <span class="shrink-0 text-[13px] font-semibold money ${c.reward > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'faint'}">${c.reward > 0 ? F.reward(c.reward, c.rewardType, { sign: true }) : '+0'}</span>

@@ -39,7 +39,7 @@
   }
 
   function txnRow(t) {
-    const events = (t.matchedEvents || []).map((ev) => `<span class="badge badge-green">${icon('gift', 'i-sm')}${esc(ev.title)}${ev.estimatedReward ? ` ≈${F.num(ev.estimatedReward)}` : ''}</span>`).join('');
+    const events = (t.matchedEvents || []).map((ev) => `<span class="badge badge-green">${icon('gift', 'i-sm')}<span class="truncate">${esc(ev.title)}</span>${ev.estimatedReward ? `<span class="shrink-0">≈${F.num(ev.estimatedReward)}</span>` : ''}</span>`).join('');
     return `<button type="button" class="row row-tap w-full text-left" data-txn="${t.id}">
       ${A.avatar(t.note || (t.card && t.card.name) || '?', null, '!h-10 !w-10 !rounded-full !text-xs')}
       <span class="min-w-0 flex-1">

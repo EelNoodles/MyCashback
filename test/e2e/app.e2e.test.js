@@ -41,10 +41,10 @@ test.after(async () => {
   if (server) server.kill('SIGTERM');
 });
 
-async function phone(t, { dark = false, desktop = false } = {}) {
+async function phone(t, { dark = false, desktop = false, width = 390 } = {}) {
   if (!playwright || !ready) { t.skip('playwright or test database not available'); return null; }
   const ctx = await browser.newContext({
-    viewport: desktop ? { width: 1280, height: 860 } : { width: 390, height: 844 },
+    viewport: desktop ? { width: 1280, height: 860 } : { width, height: 844 },
     isMobile: !desktop, hasTouch: !desktop, colorScheme: dark ? 'dark' : 'light',
     locale: 'zh-TW', timezoneId: 'Asia/Taipei'
   });
@@ -58,14 +58,33 @@ async function phone(t, { dark = false, desktop = false } = {}) {
 
 const PAGES = ['/', '/recommend?amount=1000&merchant=全聯', '/cashback', '/cashback?tab=audit', '/transactions', '/points', '/settings', '/tags', '/developers', '/transactions/map'];
 
-test('every page renders without JS errors or horizontal scrolling (light / dark / desktop)', async (t) => {
-  for (const mode of [{}, { dark: true }, { desktop: true }]) {
+/**
+ * Elements sticking out past the layout width. Measured by rect so neither a
+ * mobile browser's zoom-out (which grows innerWidth to fit) nor the .page
+ * overflow clip can hide a real overflow. Intentional horizontal scrollers
+ * (chip rows, tables, code blocks) are skipped.
+ */
+function offenders(page) {
+  return page.evaluate(() => {
+    const vw = document.documentElement.clientWidth;
+    const out = [];
+    for (const el of document.body.querySelectorAll('*')) {
+      if (el.closest('.tabbar, .sheet-root, .chips, .overflow-x-auto, .codeblock, .toast-wrap')) continue;
+      if (getComputedStyle(el).position === 'fixed') continue;
+      const r = el.getBoundingClientRect();
+      if (r.width && r.right > vw + 1) out.push(`<${el.tagName.toLowerCase()} class="${String(el.className.baseVal ?? el.className).slice(0, 60)}"> right=${Math.round(r.right)} > ${vw}`);
+    }
+    return out.slice(0, 5);
+  });
+}
+
+test('every page renders without JS errors or anything wider than the screen (360/390px light+dark, desktop)', async (t) => {
+  for (const mode of [{ width: 360 }, { width: 390, dark: true }, { desktop: true }]) {
     const page = await phone(t, mode);
     if (!page) return;
     for (const p of PAGES) {
       await page.goto(BASE + p, { waitUntil: 'networkidle' });
-      const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
-      assert.equal(overflow, false, `${p} overflows horizontally (${JSON.stringify(mode)})`);
+      assert.deepEqual(await offenders(page), [], `${p} overflows (${JSON.stringify(mode)})`);
       assert.ok(await page.locator('h1').first().isVisible(), `${p} has a visible title`);
     }
     assert.deepEqual(page.errors, [], `console errors: ${page.errors.join('\n')}`);
@@ -186,5 +205,48 @@ test('settings: create an API key and use it to report a transaction', async (t)
   assert.equal(res.status, 201);
   await page.goto(BASE + '/transactions', { waitUntil: 'networkidle' });
   assert.match(await page.locator('#txnList').textContent(), /E2E API 回報/);
+  await page.context().close();
+});
+
+test('theme: the choice in 設定 overrides the device setting and persists across pages', async (t) => {
+  const page = await phone(t, { dark: true }); // device prefers dark
+  if (!page) return;
+  await page.goto(BASE + '/settings', { waitUntil: 'networkidle' });
+  const isDark = () => page.evaluate(() => document.documentElement.classList.contains('dark'));
+  const bg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  assert.equal(await isDark(), true, 'follows the device by default');
+  await page.click('#themeSeg [data-theme="light"]');
+  assert.equal(await isDark(), false);
+  assert.equal(await page.getAttribute('#themeSeg [data-theme="light"]', 'aria-pressed'), 'true');
+  await page.goto(BASE + '/', { waitUntil: 'networkidle' });
+  assert.equal(await isDark(), false, 'light choice survives navigation on a dark device');
+  assert.equal(await bg(), 'rgb(248, 250, 252)');
+  await page.goto(BASE + '/settings', { waitUntil: 'networkidle' });
+  await page.click('#themeSeg [data-theme="dark"]');
+  await page.emulateMedia({ colorScheme: 'light' }); // device switches to light…
+  await page.goto(BASE + '/points', { waitUntil: 'networkidle' });
+  assert.equal(await isDark(), true, '…but the explicit dark choice wins');
+  assert.equal(await bg(), 'rgb(2, 6, 23)');
+  await page.goto(BASE + '/settings', { waitUntil: 'networkidle' });
+  await page.click('#themeSeg [data-theme="system"]');
+  assert.equal(await isDark(), false, 'back to following the (now light) device');
+  await page.context().close();
+});
+
+test('dashboard lists every point with its balance and opens it on tap', async (t) => {
+  const page = await phone(t, { width: 360 });
+  if (!page) return;
+  await page.goto(BASE + '/', { waitUntil: 'networkidle' });
+  const rows = page.locator('#pointsList a.row');
+  await rows.first().waitFor();
+  assert.equal(await rows.count(), 3);
+  const text = await page.locator('#pointsList').textContent();
+  for (const name of ['全聯福利點', 'LINE Points', '亞洲萬里通']) assert.ok(text.includes(name), name);
+  assert.match(text, /12,500/);
+  assert.match(await page.locator('#ptValue').textContent(), /NT\$/);
+  await page.locator('#pointsList a.row', { hasText: '亞洲萬里通' }).click();
+  await page.locator('#pointSheet').waitFor({ state: 'visible' });
+  assert.equal(await page.locator('#pdTitle').textContent(), '亞洲萬里通');
+  await page.locator('#pdBalance').filter({ hasText: '12,500' }).waitFor();
   await page.context().close();
 });

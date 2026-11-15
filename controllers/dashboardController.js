@@ -119,6 +119,27 @@ async function buildSummary(userId, now = new Date()) {
   attention.sort((a, b) => (sevRank[a.severity] - sevRank[b.severity]) || ((a.daysLeft ?? 99) - (b.daysLeft ?? 99)));
 
   const sum = (arr, f) => round2(arr.reduce((s, x) => s + (f(x) || 0), 0));
+  const pointItems = pointRows
+    .map((p) => {
+      const vpp = p.valuePerPoint != null ? Number(p.valuePerPoint) : null;
+      const balance = Number(p.currentBalance);
+      const f = flows.byPoint.get(p.id) || { earned: 0, spent: 0 };
+      const next = expiries.find((x) => x.pointId === p.id);
+      return {
+        id: p.id,
+        name: p.name,
+        issuer: p.issuer,
+        imageUrl: p.imageUrl,
+        color: p.color,
+        currentBalance: balance,
+        valuePerPoint: vpp,
+        value: vpp != null ? round2(balance * vpp) : null,
+        monthEarned: round2(f.earned),
+        monthSpent: round2(f.spent),
+        nextExpiry: next ? { amount: Number(next.amount), expiryDate: next.expiryDate, daysLeft: E.daysBetween(today, E.parseDateOnly(next.expiryDate)) } : null
+      };
+    })
+    .sort((a, b) => ((b.value ?? -1) - (a.value ?? -1)) || (b.currentBalance - a.currentBalance));
   const totalValue = sum(pointRows.filter((p) => p.valuePerPoint != null), (p) => Number(p.currentBalance) * Number(p.valuePerPoint));
 
   return {
@@ -148,7 +169,8 @@ async function buildSummary(userId, now = new Date()) {
       totalValue,
       valuedCount: pointRows.filter((p) => p.valuePerPoint != null).length,
       monthEarned: flows.earned,
-      monthSpent: flows.spent
+      monthSpent: flows.spent,
+      items: pointItems
     },
     attention: attention.slice(0, 30),
     ongoingEvents: ongoing

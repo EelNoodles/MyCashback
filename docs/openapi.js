@@ -280,7 +280,16 @@ const schemas = {
       receivedThisYear: num('今年已記錄入帳')
     }),
     events: obj({ ongoing: int('進行中'), upcoming: int('即將開始'), capReached: int('已滿額'), needsRegistration: int('待登錄') }),
-    points: obj({ count: int('點數種類'), totalValue: num('可換算的點數總價值'), valuedCount: int('有設定換算的點數數'), monthEarned: num('本月獲得點數'), monthSpent: num('本月使用點數') }),
+    points: obj({
+      count: int('點數種類'), totalValue: num('可換算的點數總價值'), valuedCount: int('有設定換算的點數數'),
+      monthEarned: num('本月獲得點數'), monthSpent: num('本月使用點數'),
+      items: arr(obj({
+        id: int('點數 ID'), name: str('名稱'), issuer: nullable(str('發行單位')), imageUrl: nullable(str('圖片')), color: nullable(str('代表色')),
+        currentBalance: num('目前餘額'), valuePerPoint: nullable(num('每點價值')), value: nullable(num('換算新台幣')),
+        monthEarned: num('本月獲得'), monthSpent: num('本月使用'),
+        nextExpiry: nullable(obj({ amount: num('到期數量'), expiryDate: date('到期日'), daysLeft: int('剩幾天') }, null, '30 天內最近一筆到期'))
+      }, null, '各點數目前的量，依價值由高到低'))
+    }),
     attention: arr(obj({
       type: str('提醒類型', { enum: ['registration_needed', 'event_starting', 'event_ending', 'cycle_ending', 'threshold_pending', 'point_expiring'] }),
       severity: str('嚴重度', { enum: ['high', 'medium', 'low'] }),
@@ -362,7 +371,10 @@ EX.summary = {
   month: { key: '2026-11', spend: 18320, txnCount: 27, lastMonthSpend: 25110 },
   rewards: { estimatedThisCycle: 612, estimatedPointsThisCycle: 120, remainingThisCycle: 388, receivedThisMonth: 280, receivedThisYear: 4120 },
   events: { ongoing: 8, upcoming: 1, capReached: 2, needsRegistration: 1 },
-  points: { count: 3, totalValue: 2150, valuedCount: 2, monthEarned: 160, monthSpent: 0 },
+  points: {
+    count: 3, totalValue: 2150, valuedCount: 2, monthEarned: 160, monthSpent: 0,
+    items: [{ id: 4, name: '全聯福利點', issuer: '全聯', imageUrl: null, color: 'hsl(20,70%,55%)', currentBalance: 1350, valuePerPoint: 1, value: 1350, monthEarned: 120, monthSpent: 0, nextExpiry: { amount: 215, expiryDate: '2026-11-20', daysLeft: 5 } }]
+  },
   attention: [
     { type: 'registration_needed', severity: 'high', eventId: 14, title: '台新 GoGo 雙11', daysLeft: 16, phase: 'active' },
     { type: 'event_ending', severity: 'high', eventId: 9, title: '永豐 DAWHO 加碼', daysLeft: 2, remainingReward: 120, remainingCapAmount: 2400 },

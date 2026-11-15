@@ -108,6 +108,31 @@
     </a>`;
   }
 
+  function pointRow(p) {
+    const exp = p.nextExpiry;
+    const expBadge = exp
+      ? `<span class="badge ${exp.daysLeft <= 7 ? 'badge-rose' : 'badge-amber'}">${F.num(exp.amount)} 點${exp.daysLeft < 0 ? '已過期' : exp.daysLeft === 0 ? '今天到期' : ` ${exp.daysLeft} 天後到期`}</span>`
+      : '';
+    const month = [p.monthEarned ? `<span class="text-emerald-600 dark:text-emerald-400">+${F.num(p.monthEarned)}</span>` : '', p.monthSpent ? `<span class="text-rose-600 dark:text-rose-400">−${F.num(p.monthSpent)}</span>` : ''].filter(Boolean).join(' ');
+    return `<a href="${A.url(`/points?open=${p.id}`)}" class="row row-tap">
+      ${A.avatar(p.name, p.imageUrl, '!h-10 !w-10')}
+      <span class="min-w-0 flex-1">
+        <span class="block truncate text-[15px] font-semibold">${esc(p.name)}</span>
+        <span class="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5 text-[12px] muted">${p.issuer ? `<span class="truncate">${esc(p.issuer)}</span>` : ''}${month ? `<span>本月 ${month}</span>` : ''}${expBadge}</span>
+      </span>
+      <span class="shrink-0 text-right">
+        <span class="block text-[17px] font-bold money">${F.num(p.currentBalance)}</span>
+        ${p.value != null ? `<span class="block text-[12px] muted money">≈ ${F.money(p.value, { decimals: 0 })}</span>` : ''}
+      </span>
+    </a>`;
+  }
+
+  function renderPoints(items) {
+    $('pointsList').innerHTML = items.length
+      ? items.map(pointRow).join('')
+      : `<div class="px-4 py-5 text-center text-sm muted">還沒有點數，<a class="text-brand-600 underline" href="${A.url('/points')}">新增第一個</a></div>`;
+  }
+
   async function load() {
     try {
       const s = await A.get('/dashboard/summary');
@@ -121,6 +146,7 @@
       $('heroReceived').textContent = F.money(s.rewards.receivedThisMonth, { decimals: 0 });
       $('heroEvents').textContent = `${s.events.ongoing} 個`;
       $('ptValue').textContent = s.points.valuedCount ? F.money(s.points.totalValue, { decimals: 0 }) : `${s.points.count} 種`;
+      renderPoints(s.points.items || []);
       $('ptEarned').textContent = '+' + F.num(s.points.monthEarned);
       $('ptSpent').textContent = '−' + F.num(s.points.monthSpent);
       $('lastMonthSpend').textContent = F.money(s.month.lastMonthSpend, { decimals: 0 });

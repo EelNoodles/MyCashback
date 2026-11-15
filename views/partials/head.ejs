@@ -4,9 +4,35 @@
 <title><%= typeof title !== 'undefined' ? title : 'MyCashback' %></title>
 <meta name="description" content="信用卡回饋、刷卡建議與點數管理" />
 <link rel="manifest" href="<%= url('/manifest.webmanifest') %>" />
-<meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)" />
-<meta name="theme-color" content="#020617" media="(prefers-color-scheme: dark)" />
+<meta name="theme-color" content="#f8fafc" />
 <meta name="color-scheme" content="light dark" />
+<script>
+  /* Theme: 'system' | 'light' | 'dark', chosen in 設定 and kept per device.
+     Runs before the stylesheet paints, so there is no flash of the wrong theme. */
+  (function () {
+    var choice = 'system';
+    try { choice = JSON.parse(localStorage.getItem('mcb.theme')) || 'system'; } catch (e) { /* default */ }
+    var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+    function apply() {
+      var dark = choice === 'dark' || (choice === 'system' && !!(mq && mq.matches));
+      var root = document.documentElement;
+      root.classList.toggle('dark', dark);
+      root.style.colorScheme = dark ? 'dark' : 'light';
+      var meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute('content', dark ? '#020617' : '#f8fafc');
+    }
+    apply();
+    if (mq) (mq.addEventListener ? mq.addEventListener('change', function () { if (choice === 'system') apply(); }) : mq.addListener(function () { if (choice === 'system') apply(); }));
+    window.MCB_THEME = {
+      get: function () { return choice; },
+      set: function (v) {
+        choice = v === 'light' || v === 'dark' ? v : 'system';
+        try { localStorage.setItem('mcb.theme', JSON.stringify(choice)); } catch (e) { /* private mode */ }
+        apply();
+      }
+    };
+  })();
+</script>
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
