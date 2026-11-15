@@ -1,6 +1,6 @@
 'use strict';
 
-const { Op } = require('sequelize');
+const { Op, fn, col } = require('sequelize');
 const {
   CardTransaction,
   CardTransactionApiKey,
@@ -9,21 +9,26 @@ const {
   CashbackEvent
 } = require('../models');
 const { genToken, sha256Hex, maskKey } = require('../config/crypto');
-const { eventMatchesTransaction, matchMerchantKeyword } = require('../services/cashbackCycleService');
+const E = require('../services/rewardEngine');
+const V = require('../utils/validate');
+
+const CARD_ATTRS = ['id', 'name', 'imageUrl', 'network', 'color', 'lastFour'];
+const PM_ATTRS = ['id', 'name', 'imageUrl', 'color'];
+const MAX_BATCH = 200;
 
 function txnInclude() {
   return [
-    { model: Card, as: 'card', attributes: ['id', 'name', 'imageUrl', 'network', 'color'] },
-    { model: PaymentMethod, as: 'paymentMethod', attributes: ['id', 'name', 'imageUrl'] }
+    { model: Card, as: 'card', attributes: CARD_ATTRS },
+    { model: PaymentMethod, as: 'paymentMethod', attributes: PM_ATTRS }
   ];
 }
 
 function toPublicTxn(row) {
-  const o = row.toJSON();
+  const o = typeof row.toJSON === 'function' ? row.toJSON() : row;
   return {
     id: o.id,
     cardId: o.cardId,
-    card: o.card ? { id: o.card.id, name: o.card.name, imageUrl: o.card.imageUrl, network: o.card.network, color: o.card.color } : null,
+    card: o.card ? { id: o.card.id, name: o.card.name, imageUrl: o.card.imageUrl, network: o.card.network, color: o.card.color, lastFour: o.card.lastFour || null } : null,
     paymentMethodId: o.paymentMethodId,
     paymentMethod: o.paymentMethod ? { id: o.paymentMethod.id, name: o.paymentMethod.name, imageUrl: o.paymentMethod.imageUrl } : null,
     amount: o.amount,
@@ -33,47 +38,123 @@ function toPublicTxn(row) {
     longitude: o.longitude != null ? Number(o.longitude) : null,
     externalRef: o.externalRef,
     source: o.source,
-    createdAt: o.createdAt
+    rawCardName: o.rawCardName || null,
+    rawPaymentMethodName: o.rawPaymentMethodName || null,
+    createdAt: o.createdAt,
+    updatedAt: o.updatedAt
   };
 }
 
-// Validates an optional { latitude, longitude } pair: both present and in
-// range, or both absent — never just one. Returns { latitude, longitude }
-// (nulls when omitted) or throws a 400-tagged error.
+/** Optional { latitude, longitude } pair — both or neither, within range. */
 function parseLatLng(body) {
   const hasLat = body.latitude !== undefined && body.latitude !== null && body.latitude !== '';
   const hasLng = body.longitude !== undefined && body.longitude !== null && body.longitude !== '';
   if (!hasLat && !hasLng) return { latitude: null, longitude: null };
-  if (hasLat !== hasLng) {
-    throw Object.assign(new Error('LOCATION_INCOMPLETE'), { status: 400, code: 'LOCATION_INCOMPLETE' });
-  }
+  if (hasLat !== hasLng) throw V.httpError(400, 'LOCATION_INCOMPLETE', 'latitude 與 longitude 需一起提供');
   const lat = Number(body.latitude);
   const lng = Number(body.longitude);
   if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lng) || lng < -180 || lng > 180) {
-    throw Object.assign(new Error('LOCATION_INVALID'), { status: 400, code: 'LOCATION_INVALID' });
+    throw V.httpError(400, 'LOCATION_INVALID', 'latitude 需介於 -90~90、longitude 需介於 -180~180');
   }
   return { latitude: lat, longitude: lng };
 }
 
-async function reload(row) {
-  return CardTransaction.findByPk(row.id, { include: txnInclude() });
+function parseAmount(v) {
+  const amt = Number(v);
+  if (v === '' || v === null || v === undefined || !Number.isFinite(amt) || amt <= 0 || amt > 1e10) {
+    throw V.httpError(400, 'AMOUNT_INVALID', 'amount 必須是大於 0 的數字');
+  }
+  return Math.round(amt * 100) / 100;
 }
 
-// Tags each transaction with the cashback events it counts towards (card +
-// payment method rule match, within the event's active date range), so the
-// management page can show "this transaction qualifies for campaign X".
-async function attachMatchedEvents(userId, txns) {
-  const events = await CashbackEvent.findAll({
+function parseTxnAt(v, required) {
+  if (v === undefined || v === null || v === '') {
+    if (required) throw V.httpError(400, 'TRANSACTION_AT_INVALID', 'transactionAt 為必填');
+    return new Date();
+  }
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) {
+    throw V.httpError(400, 'TRANSACTION_AT_INVALID', 'transactionAt 需為可解析的日期時間字串（建議 ISO 8601，例如 2026-07-04T13:05:00+08:00）');
+  }
+  return d;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Name resolution for external callers
+// ─────────────────────────────────────────────────────────────
+
+function nameKeys(row) {
+  return [row.name, ...E.parseMerchantKeywords(row.aliases)].map(E.normalizeForMatch).filter(Boolean);
+}
+
+/**
+ * Card lookup order: exact name → case/whitespace-insensitive name or alias
+ * → card last four digits. Ambiguous last-four matches are rejected.
+ */
+async function resolveCard(userId, { cardName, cardLastFour }) {
+  const name = String(cardName || '').trim();
+  const last4 = String(cardLastFour || '').replace(/\D/g, '');
+  if (!name && !last4) throw V.httpError(400, 'CARD_NAME_REQUIRED', '需提供 cardName（或 cardLastFour）');
+  const cards = await Card.findAll({ where: { userId }, attributes: ['id', 'name', 'aliases', 'lastFour'] });
+  if (name) {
+    const exact = cards.find((c) => c.name === name);
+    if (exact) return exact;
+    const norm = E.normalizeForMatch(name);
+    const fuzzy = cards.filter((c) => nameKeys(c).includes(norm));
+    if (fuzzy.length === 1) return fuzzy[0];
+  }
+  if (last4.length === 4) {
+    const byLast4 = cards.filter((c) => c.lastFour === last4);
+    if (byLast4.length === 1) return byLast4[0];
+  }
+  throw V.httpError(422, 'CARD_NOT_FOUND',
+    `找不到${name ? `名稱為「${name}」` : ''}${name && last4 ? '或' : ''}${last4 ? `末四碼 ${last4} ` : ''}的卡片，請先在「卡片與支付方式」建立，或把這個名稱加入卡片別名`,
+    { knownCards: cards.map((c) => c.name).sort() });
+}
+
+async function resolvePaymentMethod(userId, paymentMethodName) {
+  const name = paymentMethodName != null ? String(paymentMethodName).trim() : '';
+  if (!name) return null;
+  const pms = await PaymentMethod.findAll({ where: { userId }, attributes: ['id', 'name', 'aliases'] });
+  const exact = pms.find((p) => p.name === name);
+  if (exact) return exact;
+  const norm = E.normalizeForMatch(name);
+  const fuzzy = pms.filter((p) => nameKeys(p).includes(norm));
+  if (fuzzy.length === 1) return fuzzy[0];
+  throw V.httpError(422, 'PAYMENT_METHOD_NOT_FOUND',
+    `找不到名稱為「${name}」的支付方式，請先在「卡片與支付方式」建立，或加入支付方式別名`,
+    { knownPaymentMethods: pms.map((p) => p.name).sort() });
+}
+
+// ─────────────────────────────────────────────────────────────
+// Matched campaigns per transaction
+// ─────────────────────────────────────────────────────────────
+
+async function loadMatchEvents(userId) {
+  return (await CashbackEvent.findAll({
     where: { userId },
     include: [
       { model: Card, as: 'cards', through: { attributes: [] }, attributes: ['id'] },
       { model: PaymentMethod, as: 'paymentMethods', through: { attributes: [] }, attributes: ['id'] }
     ]
-  });
+  })).map((e) => e.toJSON());
+}
 
+/** This transaction's own share of a campaign's reward (before caps). */
+function standaloneReward(ev, txn) {
+  if (ev.cashbackPercent != null && Number(ev.cashbackPercent) > 0) {
+    const p = Math.min(6, Math.max(0, parseInt(ev.rewardPrecision, 10) || 0));
+    return Number(E.percentRewardMicro(E.toCents(txn.amount), E.toPctMilli(ev.cashbackPercent), p, ev.rewardRounding)) / 1e6;
+  }
+  if (ev.cashbackFixed != null && ev.minimumSpendScope !== 'cycleTotal') return Number(ev.cashbackFixed);
+  return null;
+}
+
+async function attachMatchedEvents(userId, txns, events) {
+  const evs = events || await loadMatchEvents(userId);
   for (const txn of txns) {
-    txn.matchedEvents = events
-      .filter((ev) => eventMatchesTransaction(ev, txn))
+    txn.matchedEvents = evs
+      .filter((ev) => E.eventMatchesTransaction(ev, txn))
       .map((ev) => ({
         id: ev.id,
         title: ev.title,
@@ -81,308 +162,345 @@ async function attachMatchedEvents(userId, txns) {
         cashbackFixed: ev.cashbackFixed,
         rewardType: ev.rewardType,
         maxReward: ev.maxReward,
-        matchedKeyword: ev.requireMerchantMatch ? matchMerchantKeyword(ev, txn).keyword : null
+        estimatedReward: standaloneReward(ev, txn),
+        matchedKeyword: ev.requireMerchantMatch ? E.matchMerchantKeyword(ev, txn).keyword : null
       }));
   }
   return txns;
 }
 
 // ─────────────────────────────────────────────────────────────
-// POST /api/ingest/card-transactions  (API-key auth, called by an external
-// bookkeeping system — see middleware/apiKeyAuth.js)
+// Ingest (API key) — POST /api/ingest/card-transactions
 // ─────────────────────────────────────────────────────────────
-exports.ingest = async (req, res, next) => {
+
+async function ingestOne(userId, body) {
+  const b = body || {};
+  const amount = parseAmount(b.amount);
+  const transactionAt = parseTxnAt(b.transactionAt, false);
+  const latLng = parseLatLng(b);
+  const externalRef = V.trimOrNull(b.externalRef, 120);
+
+  if (externalRef) {
+    const existing = await CardTransaction.findOne({ where: { userId, externalRef }, include: txnInclude() });
+    if (existing) return { status: 200, created: false, txn: existing };
+  }
+
+  const card = await resolveCard(userId, b);
+  const pm = await resolvePaymentMethod(userId, b.paymentMethodName);
   try {
-    const userId = req.user.id;
-    const { cardName, paymentMethodName, amount, transactionAt, note, externalRef } = req.body || {};
-
-    const cardNameTrim = String(cardName || '').trim();
-    if (!cardNameTrim) return res.status(400).json({ error: 'CARD_NAME_REQUIRED' });
-
-    const amt = Number(amount);
-    if (!Number.isFinite(amt) || amt <= 0) {
-      return res.status(400).json({ error: 'AMOUNT_INVALID', message: 'amount 必須是大於 0 的數字' });
-    }
-
-    const txAt = transactionAt ? new Date(transactionAt) : new Date();
-    if (Number.isNaN(txAt.getTime())) {
-      return res.status(400).json({ error: 'TRANSACTION_AT_INVALID', message: 'transactionAt 需為可解析的日期時間字串 (建議 ISO 8601)' });
-    }
-
-    let latLng;
-    try {
-      latLng = parseLatLng(req.body || {});
-    } catch (e) {
-      return res.status(400).json({ error: e.code, message: e.code === 'LOCATION_INCOMPLETE' ? 'latitude 與 longitude 需一起提供' : 'latitude/longitude 超出範圍' });
-    }
-
-    const externalRefTrim = externalRef != null ? String(externalRef).trim().slice(0, 120) : null;
-
-    // Idempotency: replaying the same externalRef returns the existing record.
-    if (externalRefTrim) {
-      const existing = await CardTransaction.findOne({
-        where: { userId, externalRef: externalRefTrim },
-        include: txnInclude()
-      });
-      if (existing) return res.status(200).json(toPublicTxn(existing));
-    }
-
-    const card = await Card.findOne({ where: { userId, name: cardNameTrim } });
-    if (!card) {
-      const known = await Card.findAll({ where: { userId }, attributes: ['name'], order: [['name', 'ASC']] });
-      return res.status(422).json({
-        error: 'CARD_NOT_FOUND',
-        message: `找不到名稱為「${cardNameTrim}」的卡片，請先在「卡片與支付方式」建立相同名稱`,
-        knownCards: known.map((c) => c.name)
-      });
-    }
-
-    const pmNameTrim = paymentMethodName != null ? String(paymentMethodName).trim() : '';
-    let paymentMethod = null;
-    if (pmNameTrim) {
-      paymentMethod = await PaymentMethod.findOne({ where: { userId, name: pmNameTrim } });
-      if (!paymentMethod) {
-        const known = await PaymentMethod.findAll({ where: { userId }, attributes: ['name'], order: [['name', 'ASC']] });
-        return res.status(422).json({
-          error: 'PAYMENT_METHOD_NOT_FOUND',
-          message: `找不到名稱為「${pmNameTrim}」的支付方式，請先在「卡片與支付方式」建立相同名稱`,
-          knownPaymentMethods: known.map((p) => p.name)
-        });
-      }
-    }
-
     const created = await CardTransaction.create({
       userId,
       cardId: card.id,
-      paymentMethodId: paymentMethod ? paymentMethod.id : null,
-      rawCardName: cardNameTrim,
-      rawPaymentMethodName: pmNameTrim || null,
-      amount: amt,
-      transactionAt: txAt,
-      note: note ? String(note).trim().slice(0, 255) : null,
+      paymentMethodId: pm ? pm.id : null,
+      rawCardName: V.trimOrNull(b.cardName, 120) || card.name,
+      rawPaymentMethodName: V.trimOrNull(b.paymentMethodName, 120),
+      amount,
+      transactionAt,
+      note: V.trimOrNull(b.note, 255),
       latitude: latLng.latitude,
       longitude: latLng.longitude,
-      externalRef: externalRefTrim,
+      externalRef,
       source: 'api'
     });
-
-    res.status(201).json(toPublicTxn(await reload(created)));
+    return { status: 201, created: true, txn: await CardTransaction.findByPk(created.id, { include: txnInclude() }) };
   } catch (err) {
-    if (err.name === 'SequelizeUniqueConstraintError') {
-      // Race: two concurrent retries with the same externalRef.
-      const externalRefTrim = req.body && req.body.externalRef ? String(req.body.externalRef).trim() : null;
-      const existing = externalRefTrim
-        ? await CardTransaction.findOne({ where: { userId: req.user.id, externalRef: externalRefTrim }, include: txnInclude() })
-        : null;
-      if (existing) return res.status(200).json(toPublicTxn(existing));
-      return res.status(409).json({ error: 'DUPLICATE_EXTERNAL_REF' });
+    if (err.name === 'SequelizeUniqueConstraintError' && externalRef) {
+      // Two concurrent retries with the same externalRef — return the winner.
+      const existing = await CardTransaction.findOne({ where: { userId, externalRef }, include: txnInclude() });
+      if (existing) return { status: 200, created: false, txn: existing };
+      throw V.httpError(409, 'DUPLICATE_EXTERNAL_REF', 'externalRef 重複');
     }
+    throw err;
+  }
+}
+
+function sendError(res, err) {
+  const status = err.status || 500;
+  return res.status(status).json({ error: err.code || 'INTERNAL_ERROR', message: err.message, ...(err.extra || {}) });
+}
+
+exports.ingest = async (req, res, next) => {
+  try {
+    const r = await ingestOne(req.user.id, req.body);
+    const [txn] = await attachMatchedEvents(req.user.id, [toPublicTxn(r.txn)]);
+    res.status(r.status).json(txn);
+  } catch (err) {
+    if (err.expose) return sendError(res, err);
     next(err);
   }
 };
 
-// ─────────────────────────────────────────────────────────────
-// Session-authenticated CRUD for the management page
-// ─────────────────────────────────────────────────────────────
-
-// GET /api/transactions?cardId=&paymentMethodId=&from=&to=&q=&page=&pageSize=
-exports.list = async (req, res, next) => {
+// POST /api/ingest/card-transactions/batch  body: { transactions: [...] }
+exports.ingestBatch = async (req, res, next) => {
   try {
-    const where = { userId: req.user.id };
-    if (req.query.cardId) where.cardId = parseInt(req.query.cardId, 10);
-    if (req.query.paymentMethodId === 'none') {
-      where.paymentMethodId = null;
-    } else if (req.query.paymentMethodId) {
-      where.paymentMethodId = parseInt(req.query.paymentMethodId, 10);
-    }
-    if (req.query.from || req.query.to) {
-      const from = req.query.from ? new Date(req.query.from) : null;
-      const to = req.query.to ? new Date(req.query.to) : null;
-      if ((from && Number.isNaN(from.getTime())) || (to && Number.isNaN(to.getTime()))) {
-        return res.status(400).json({ error: 'DATE_RANGE_INVALID', message: 'from/to 需為可解析的日期時間字串' });
+    const list = req.body && Array.isArray(req.body.transactions) ? req.body.transactions : null;
+    if (!list) return res.status(400).json({ error: 'TRANSACTIONS_REQUIRED', message: 'body 需為 { "transactions": [ ... ] }' });
+    if (list.length > MAX_BATCH) return res.status(413).json({ error: 'BATCH_TOO_LARGE', message: `單次最多 ${MAX_BATCH} 筆` });
+    const results = [];
+    for (let i = 0; i < list.length; i++) {
+      try {
+        const r = await ingestOne(req.user.id, list[i]);
+        results.push({ index: i, status: r.created ? 'created' : 'duplicate', id: r.txn.id, externalRef: r.txn.externalRef });
+      } catch (err) {
+        if (!err.expose) throw err;
+        results.push({ index: i, status: 'error', error: err.code, message: err.message, ...(err.extra || {}) });
       }
-      where.transactionAt = {};
-      if (from) where.transactionAt[Op.gte] = from;
-      if (to) where.transactionAt[Op.lte] = to;
     }
-    if (req.query.q) {
-      where.note = { [Op.like]: `%${String(req.query.q).trim()}%` };
-    }
-    if (['api', 'manual'].includes(req.query.source)) {
-      where.source = req.query.source;
-    }
+    const count = (s) => results.filter((r) => r.status === s).length;
+    res.json({ created: count('created'), duplicates: count('duplicate'), errors: count('error'), results });
+  } catch (err) { next(err); }
+};
 
-    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const pageSize = Math.min(200, Math.max(1, parseInt(req.query.pageSize, 10) || 50));
+async function findByRef(userId, ref) {
+  const externalRef = String(ref || '').trim();
+  const row = externalRef ? await CardTransaction.findOne({ where: { userId, externalRef }, include: txnInclude() }) : null;
+  if (!row) throw V.httpError(404, 'NOT_FOUND', `找不到 externalRef 為「${externalRef}」的交易`);
+  return row;
+}
 
-    const { rows, count } = await CardTransaction.findAndCountAll({
+// GET /api/ingest/card-transactions/:externalRef
+exports.ingestGet = async (req, res, next) => {
+  try {
+    const row = await findByRef(req.user.id, req.params.externalRef);
+    const [txn] = await attachMatchedEvents(req.user.id, [toPublicTxn(row)]);
+    res.json(txn);
+  } catch (err) { if (err.expose) return sendError(res, err); next(err); }
+};
+
+// PUT /api/ingest/card-transactions/:externalRef  — partial update (e.g. corrected amount)
+exports.ingestUpdate = async (req, res, next) => {
+  try {
+    const row = await findByRef(req.user.id, req.params.externalRef);
+    const b = req.body || {};
+    if (V.has(b, 'cardName') || V.has(b, 'cardLastFour')) {
+      const card = await resolveCard(req.user.id, b);
+      row.cardId = card.id;
+      row.rawCardName = V.trimOrNull(b.cardName, 120) || card.name;
+    }
+    if (V.has(b, 'paymentMethodName')) {
+      const pm = await resolvePaymentMethod(req.user.id, b.paymentMethodName);
+      row.paymentMethodId = pm ? pm.id : null;
+      row.rawPaymentMethodName = V.trimOrNull(b.paymentMethodName, 120);
+    }
+    if (V.has(b, 'amount')) row.amount = parseAmount(b.amount);
+    if (V.has(b, 'transactionAt')) row.transactionAt = parseTxnAt(b.transactionAt, true);
+    if (V.has(b, 'note')) row.note = V.trimOrNull(b.note, 255);
+    if (V.has(b, 'latitude') || V.has(b, 'longitude')) Object.assign(row, parseLatLng(b));
+    await row.save();
+    const fresh = await CardTransaction.findByPk(row.id, { include: txnInclude() });
+    const [txn] = await attachMatchedEvents(req.user.id, [toPublicTxn(fresh)]);
+    res.json(txn);
+  } catch (err) { if (err.expose) return sendError(res, err); next(err); }
+};
+
+// DELETE /api/ingest/card-transactions/:externalRef  — e.g. the purchase was refunded / voided
+exports.ingestDelete = async (req, res, next) => {
+  try {
+    const row = await findByRef(req.user.id, req.params.externalRef);
+    await row.destroy();
+    res.json({ ok: true, id: row.id, externalRef: row.externalRef });
+  } catch (err) { if (err.expose) return sendError(res, err); next(err); }
+};
+
+// ─────────────────────────────────────────────────────────────
+// Session CRUD for the app
+// ─────────────────────────────────────────────────────────────
+
+function listWhere(userId, query) {
+  const where = { userId };
+  const and = [];
+  const cardId = V.idParam(query.cardId);
+  if (cardId) where.cardId = cardId;
+  if (query.paymentMethodId === 'none') where.paymentMethodId = null;
+  else if (V.idParam(query.paymentMethodId)) where.paymentMethodId = V.idParam(query.paymentMethodId);
+  const from = V.dateTimeOrNull(query.from, 'from');
+  const to = V.dateTimeOrNull(query.to, 'to');
+  if (from || to) {
+    where.transactionAt = {};
+    if (from) where.transactionAt[Op.gte] = from;
+    if (to) where.transactionAt[Op.lte] = to;
+  }
+  const minAmount = V.numberOrNull(query.minAmount, 'minAmount', { min: 0 });
+  const maxAmount = V.numberOrNull(query.maxAmount, 'maxAmount', { min: 0 });
+  if (minAmount != null || maxAmount != null) {
+    where.amount = {};
+    if (minAmount != null) where.amount[Op.gte] = minAmount;
+    if (maxAmount != null) where.amount[Op.lte] = maxAmount;
+  }
+  if (['api', 'manual'].includes(query.source)) where.source = query.source;
+  const q = String(query.q || '').trim();
+  if (q) {
+    const like = { [Op.like]: `%${q.replace(/[\\%_]/g, (m) => '\\' + m)}%` };
+    and.push({
+      [Op.or]: [
+        { note: like },
+        { rawCardName: like },
+        { rawPaymentMethodName: like },
+        { '$card.name$': like },
+        { '$paymentMethod.name$': like }
+      ]
+    });
+  }
+  if (and.length) where[Op.and] = and;
+  return where;
+}
+
+// GET /api/transactions
+exports.list = V.ah(async (req, res) => {
+  const where = listWhere(req.user.id, req.query);
+  const { page, pageSize, offset } = V.pagination(req.query, { defaultSize: 20, maxSize: 200 });
+
+  const [{ rows, count }, sums] = await Promise.all([
+    CardTransaction.findAndCountAll({
       where,
       include: txnInclude(),
       order: [['transactionAt', 'DESC'], ['id', 'DESC']],
       limit: pageSize,
-      offset: (page - 1) * pageSize
-    });
+      offset,
+      distinct: true
+    }),
+    CardTransaction.findOne({
+      where,
+      include: txnInclude().map((i) => ({ ...i, attributes: [] })),
+      attributes: [[fn('COALESCE', fn('SUM', col('amount')), 0), 'total']],
+      raw: true
+    })
+  ]);
 
-    res.json({
-      items: await attachMatchedEvents(req.user.id, rows.map(toPublicTxn)),
-      total: count,
-      page,
-      pageSize
-    });
-  } catch (err) { next(err); }
-};
+  res.json({
+    items: await attachMatchedEvents(req.user.id, rows.map(toPublicTxn)),
+    total: count,
+    page,
+    pageSize,
+    summary: { count, totalAmount: Math.round(Number(sums && sums.total ? sums.total : 0) * 100) / 100 }
+  });
+});
+
+// GET /api/transactions/stats?from=&to=  (spend grouped by card / payment method / day)
+exports.stats = V.ah(async (req, res) => {
+  const where = listWhere(req.user.id, req.query);
+  const base = { where, include: txnInclude().map((i) => ({ ...i, attributes: [] })), raw: true };
+  const amountSum = [fn('SUM', col('amount')), 'total'];
+  const cnt = [fn('COUNT', col('CardTransaction.id')), 'count'];
+  const day = fn('DATE', col('transactionAt'));
+  const [byCard, byPm, byDay] = await Promise.all([
+    CardTransaction.findAll({ ...base, attributes: ['cardId', [col('card.name'), 'name'], amountSum, cnt], group: ['cardId', 'card.name'] }),
+    CardTransaction.findAll({ ...base, attributes: ['paymentMethodId', [col('paymentMethod.name'), 'name'], amountSum, cnt], group: ['paymentMethodId', 'paymentMethod.name'] }),
+    CardTransaction.findAll({ ...base, attributes: [[day, 'date'], amountSum, cnt], group: [day], order: [[day, 'ASC']] })
+  ]);
+  const shape = (rows, key) => rows.map((r) => ({
+    [key]: r[key] != null ? r[key] : null,
+    name: r.name || null,
+    total: Math.round(Number(r.total || 0) * 100) / 100,
+    count: Number(r.count || 0)
+  })).sort((a, b) => b.total - a.total);
+  const total = byCard.reduce((s, r) => s + Number(r.total || 0), 0);
+  res.json({
+    totalAmount: Math.round(total * 100) / 100,
+    count: byCard.reduce((s, r) => s + Number(r.count || 0), 0),
+    byCard: shape(byCard, 'cardId'),
+    byPaymentMethod: shape(byPm, 'paymentMethodId'),
+    byDay: byDay.map((r) => ({ date: String(r.date).slice(0, 10), total: Math.round(Number(r.total || 0) * 100) / 100, count: Number(r.count || 0) }))
+  });
+});
 
 // GET /api/transactions/:id
-exports.get = async (req, res, next) => {
-  try {
-    const row = await CardTransaction.findOne({
-      where: { id: req.params.id, userId: req.user.id },
-      include: txnInclude()
-    });
-    if (!row) return res.status(404).json({ error: 'NOT_FOUND' });
-    const [txn] = await attachMatchedEvents(req.user.id, [toPublicTxn(row)]);
-    res.json(txn);
-  } catch (err) { next(err); }
-};
+exports.get = V.ah(async (req, res) => {
+  const row = await CardTransaction.findOne({ where: { id: V.idParam(req.params.id) || 0, userId: req.user.id }, include: txnInclude() });
+  if (!row) throw V.httpError(404, 'NOT_FOUND', '找不到此筆交易');
+  const [txn] = await attachMatchedEvents(req.user.id, [toPublicTxn(row)]);
+  res.json(txn);
+});
 
-// POST /api/transactions  (manual entry from the management page)
-exports.create = async (req, res, next) => {
-  try {
-    const { cardId, paymentMethodId, amount, transactionAt, note } = req.body || {};
-    const amt = Number(amount);
-    if (!cardId) return res.status(400).json({ error: 'CARD_ID_REQUIRED' });
-    if (!Number.isFinite(amt) || amt <= 0) return res.status(400).json({ error: 'AMOUNT_INVALID' });
-    const txAt = transactionAt ? new Date(transactionAt) : new Date();
-    if (Number.isNaN(txAt.getTime())) return res.status(400).json({ error: 'TRANSACTION_AT_INVALID' });
+async function ownedCard(userId, id) {
+  const card = await Card.findOne({ where: { id: V.idParam(id) || 0, userId } });
+  if (!card) throw V.httpError(400, 'CARD_NOT_FOUND', '找不到指定的卡片');
+  return card;
+}
 
-    let latLng;
-    try {
-      latLng = parseLatLng(req.body || {});
-    } catch (e) {
-      return res.status(400).json({ error: e.code });
-    }
+async function ownedPm(userId, id) {
+  if (id === null || id === undefined || id === '' || id === 'none') return null;
+  const pm = await PaymentMethod.findOne({ where: { id: V.idParam(id) || 0, userId } });
+  if (!pm) throw V.httpError(400, 'PAYMENT_METHOD_NOT_FOUND', '找不到指定的支付方式');
+  return pm;
+}
 
-    const card = await Card.findOne({ where: { id: cardId, userId: req.user.id } });
-    if (!card) return res.status(400).json({ error: 'CARD_NOT_FOUND' });
+// POST /api/transactions  (manual entry)
+exports.create = V.ah(async (req, res) => {
+  const b = req.body || {};
+  if (!b.cardId) throw V.httpError(400, 'CARD_ID_REQUIRED', '請選擇卡片');
+  const amount = parseAmount(b.amount);
+  const transactionAt = parseTxnAt(b.transactionAt, false);
+  const latLng = parseLatLng(b);
+  const card = await ownedCard(req.user.id, b.cardId);
+  const pm = await ownedPm(req.user.id, b.paymentMethodId);
+  const created = await CardTransaction.create({
+    userId: req.user.id,
+    cardId: card.id,
+    paymentMethodId: pm ? pm.id : null,
+    rawCardName: card.name,
+    rawPaymentMethodName: pm ? pm.name : null,
+    amount,
+    transactionAt,
+    note: V.trimOrNull(b.note, 255),
+    latitude: latLng.latitude,
+    longitude: latLng.longitude,
+    source: 'manual'
+  });
+  const row = await CardTransaction.findByPk(created.id, { include: txnInclude() });
+  const [txn] = await attachMatchedEvents(req.user.id, [toPublicTxn(row)]);
+  res.status(201).json(txn);
+});
 
-    let paymentMethod = null;
-    if (paymentMethodId) {
-      paymentMethod = await PaymentMethod.findOne({ where: { id: paymentMethodId, userId: req.user.id } });
-      if (!paymentMethod) return res.status(400).json({ error: 'PAYMENT_METHOD_NOT_FOUND' });
-    }
-
-    const created = await CardTransaction.create({
-      userId: req.user.id,
-      cardId: card.id,
-      paymentMethodId: paymentMethod ? paymentMethod.id : null,
-      rawCardName: card.name,
-      rawPaymentMethodName: paymentMethod ? paymentMethod.name : null,
-      amount: amt,
-      transactionAt: txAt,
-      note: note ? String(note).trim().slice(0, 255) : null,
-      latitude: latLng.latitude,
-      longitude: latLng.longitude,
-      source: 'manual'
-    });
-
-    const [txn] = await attachMatchedEvents(req.user.id, [toPublicTxn(await reload(created))]);
-    res.status(201).json(txn);
-  } catch (err) { next(err); }
-};
-
-// PUT /api/transactions/:id
-exports.update = async (req, res, next) => {
-  try {
-    const row = await CardTransaction.findOne({ where: { id: req.params.id, userId: req.user.id } });
-    if (!row) return res.status(404).json({ error: 'NOT_FOUND' });
-
-    const { cardId, paymentMethodId, amount, transactionAt, note } = req.body || {};
-
-    if (cardId !== undefined) {
-      const card = await Card.findOne({ where: { id: cardId, userId: req.user.id } });
-      if (!card) return res.status(400).json({ error: 'CARD_NOT_FOUND' });
-      row.cardId = card.id;
-      row.rawCardName = card.name;
-    }
-    if (paymentMethodId !== undefined) {
-      if (!paymentMethodId) {
-        row.paymentMethodId = null;
-        row.rawPaymentMethodName = null;
-      } else {
-        const pm = await PaymentMethod.findOne({ where: { id: paymentMethodId, userId: req.user.id } });
-        if (!pm) return res.status(400).json({ error: 'PAYMENT_METHOD_NOT_FOUND' });
-        row.paymentMethodId = pm.id;
-        row.rawPaymentMethodName = pm.name;
-      }
-    }
-    if (amount !== undefined) {
-      const amt = Number(amount);
-      if (!Number.isFinite(amt) || amt <= 0) return res.status(400).json({ error: 'AMOUNT_INVALID' });
-      row.amount = amt;
-    }
-    if (transactionAt !== undefined) {
-      const txAt = new Date(transactionAt);
-      if (Number.isNaN(txAt.getTime())) return res.status(400).json({ error: 'TRANSACTION_AT_INVALID' });
-      row.transactionAt = txAt;
-    }
-    if (note !== undefined) row.note = note ? String(note).trim().slice(0, 255) : null;
-    if (req.body.latitude !== undefined || req.body.longitude !== undefined) {
-      try {
-        const latLng = parseLatLng(req.body || {});
-        row.latitude = latLng.latitude;
-        row.longitude = latLng.longitude;
-      } catch (e) {
-        return res.status(400).json({ error: e.code });
-      }
-    }
-
-    await row.save();
-    const [txn] = await attachMatchedEvents(req.user.id, [toPublicTxn(await reload(row))]);
-    res.json(txn);
-  } catch (err) { next(err); }
-};
-
-// GET /api/transactions/locations?cardId=&from=&to=
-// Lightweight, unpaginated feed of geotagged transactions for the map view
-// (markers + heatmap) — deliberately separate from list() since a map wants
-// every matching point at once rather than a page of a table.
-exports.listLocations = async (req, res, next) => {
-  try {
-    const where = {
-      userId: req.user.id,
-      latitude: { [Op.ne]: null },
-      longitude: { [Op.ne]: null }
-    };
-    if (req.query.cardId) where.cardId = parseInt(req.query.cardId, 10);
-    if (req.query.from || req.query.to) {
-      where.transactionAt = {};
-      if (req.query.from) where.transactionAt[Op.gte] = new Date(req.query.from);
-      if (req.query.to) where.transactionAt[Op.lte] = new Date(req.query.to);
-    }
-
-    const rows = await CardTransaction.findAll({
-      where,
-      include: txnInclude(),
-      order: [['transactionAt', 'DESC']],
-      limit: 5000
-    });
-
-    res.json(rows.map(toPublicTxn));
-  } catch (err) { next(err); }
-};
+// PUT /api/transactions/:id  (partial)
+exports.update = V.ah(async (req, res) => {
+  const row = await CardTransaction.findOne({ where: { id: V.idParam(req.params.id) || 0, userId: req.user.id } });
+  if (!row) throw V.httpError(404, 'NOT_FOUND', '找不到此筆交易');
+  const b = req.body || {};
+  if (V.has(b, 'cardId')) {
+    const card = await ownedCard(req.user.id, b.cardId);
+    row.cardId = card.id;
+    row.rawCardName = card.name;
+  }
+  if (V.has(b, 'paymentMethodId')) {
+    const pm = await ownedPm(req.user.id, b.paymentMethodId);
+    row.paymentMethodId = pm ? pm.id : null;
+    row.rawPaymentMethodName = pm ? pm.name : null;
+  }
+  if (V.has(b, 'amount')) row.amount = parseAmount(b.amount);
+  if (V.has(b, 'transactionAt')) row.transactionAt = parseTxnAt(b.transactionAt, true);
+  if (V.has(b, 'note')) row.note = V.trimOrNull(b.note, 255);
+  if (V.has(b, 'latitude') || V.has(b, 'longitude')) Object.assign(row, parseLatLng(b));
+  await row.save();
+  const fresh = await CardTransaction.findByPk(row.id, { include: txnInclude() });
+  const [txn] = await attachMatchedEvents(req.user.id, [toPublicTxn(fresh)]);
+  res.json(txn);
+});
 
 // DELETE /api/transactions/:id
-exports.remove = async (req, res, next) => {
-  try {
-    const row = await CardTransaction.findOne({ where: { id: req.params.id, userId: req.user.id } });
-    if (!row) return res.status(404).json({ error: 'NOT_FOUND' });
-    await row.destroy();
-    res.json({ ok: true });
-  } catch (err) { next(err); }
-};
+exports.remove = V.ah(async (req, res) => {
+  const row = await CardTransaction.findOne({ where: { id: V.idParam(req.params.id) || 0, userId: req.user.id } });
+  if (!row) throw V.httpError(404, 'NOT_FOUND', '找不到此筆交易');
+  await row.destroy();
+  res.json({ ok: true });
+});
+
+// GET /api/transactions/locations?cardId=&from=&to=
+exports.listLocations = V.ah(async (req, res) => {
+  const where = listWhere(req.user.id, req.query);
+  where.latitude = { [Op.ne]: null };
+  where.longitude = { [Op.ne]: null };
+  const rows = await CardTransaction.findAll({
+    where,
+    include: txnInclude(),
+    order: [['transactionAt', 'DESC']],
+    limit: 5000
+  });
+  res.json(rows.map(toPublicTxn));
+});
 
 // ─────────────────────────────────────────────────────────────
-// API key management (issues the tokens the ingest endpoint accepts)
+// API keys (shared by ingest + external read API)
 // ─────────────────────────────────────────────────────────────
 
 function keyToPublic(row) {
@@ -396,66 +514,48 @@ function keyToPublic(row) {
   };
 }
 
-// GET /api/transactions/api-keys
-exports.listApiKeys = async (req, res, next) => {
-  try {
-    const rows = await CardTransactionApiKey.findAll({
-      where: { userId: req.user.id },
-      order: [['id', 'ASC']]
-    });
-    res.json(rows.map(keyToPublic));
-  } catch (err) { next(err); }
-};
+exports.listApiKeys = V.ah(async (req, res) => {
+  const rows = await CardTransactionApiKey.findAll({ where: { userId: req.user.id }, order: [['id', 'ASC']] });
+  res.json(rows.map(keyToPublic));
+});
 
-// POST /api/transactions/api-keys  body: { name }
-exports.createApiKey = async (req, res, next) => {
-  try {
-    const name = String((req.body && req.body.name) || '').trim();
-    if (!name) return res.status(400).json({ error: 'NAME_REQUIRED' });
-    if (name.length > 120) return res.status(400).json({ error: 'NAME_TOO_LONG' });
+exports.createApiKey = V.ah(async (req, res) => {
+  const name = String((req.body && req.body.name) || '').trim();
+  if (!name) throw V.httpError(400, 'NAME_REQUIRED', '請輸入金鑰名稱');
+  if (name.length > 120) throw V.httpError(400, 'NAME_TOO_LONG', '名稱最多 120 字');
+  const token = genToken('mcb');
+  const row = await CardTransactionApiKey.create({
+    userId: req.user.id,
+    name,
+    keyHash: sha256Hex(token),
+    keyMask: maskKey(token),
+    isActive: true
+  });
+  // The plaintext token is only ever returned here.
+  res.status(201).json({ ...keyToPublic(row), token });
+});
 
-    const token = genToken('mcb');
-    const row = await CardTransactionApiKey.create({
-      userId: req.user.id,
-      name,
-      keyHash: sha256Hex(token),
-      keyMask: maskKey(token),
-      isActive: true
-    });
+exports.updateApiKey = V.ah(async (req, res) => {
+  const row = await CardTransactionApiKey.findOne({ where: { id: V.idParam(req.params.keyId) || 0, userId: req.user.id } });
+  if (!row) throw V.httpError(404, 'NOT_FOUND', '找不到此金鑰');
+  if (typeof req.body.name === 'string') {
+    const name = req.body.name.trim();
+    if (!name) throw V.httpError(400, 'NAME_REQUIRED', '請輸入金鑰名稱');
+    row.name = name.slice(0, 120);
+  }
+  if (typeof req.body.isActive === 'boolean') row.isActive = req.body.isActive;
+  await row.save();
+  res.json(keyToPublic(row));
+});
 
-    // Plaintext token is only ever returned here — it cannot be retrieved again.
-    res.status(201).json({ ...keyToPublic(row), token });
-  } catch (err) { next(err); }
-};
+exports.removeApiKey = V.ah(async (req, res) => {
+  const row = await CardTransactionApiKey.findOne({ where: { id: V.idParam(req.params.keyId) || 0, userId: req.user.id } });
+  if (!row) throw V.httpError(404, 'NOT_FOUND', '找不到此金鑰');
+  await row.destroy();
+  res.json({ ok: true });
+});
 
-// PUT /api/transactions/api-keys/:keyId  body: { name?, isActive? }
-exports.updateApiKey = async (req, res, next) => {
-  try {
-    const row = await CardTransactionApiKey.findOne({
-      where: { id: req.params.keyId, userId: req.user.id }
-    });
-    if (!row) return res.status(404).json({ error: 'NOT_FOUND' });
-
-    if (typeof req.body.name === 'string') {
-      const name = req.body.name.trim();
-      if (!name) return res.status(400).json({ error: 'NAME_REQUIRED' });
-      row.name = name;
-    }
-    if (typeof req.body.isActive === 'boolean') row.isActive = req.body.isActive;
-
-    await row.save();
-    res.json(keyToPublic(row));
-  } catch (err) { next(err); }
-};
-
-// DELETE /api/transactions/api-keys/:keyId
-exports.removeApiKey = async (req, res, next) => {
-  try {
-    const row = await CardTransactionApiKey.findOne({
-      where: { id: req.params.keyId, userId: req.user.id }
-    });
-    if (!row) return res.status(404).json({ error: 'NOT_FOUND' });
-    await row.destroy();
-    res.json({ ok: true });
-  } catch (err) { next(err); }
-};
+exports.toPublicTxn = toPublicTxn;
+exports.txnInclude = txnInclude;
+exports.attachMatchedEvents = attachMatchedEvents;
+exports.listWhere = listWhere;

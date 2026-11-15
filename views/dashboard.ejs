@@ -1,92 +1,66 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
-<head>
-  <%- include('partials/head', { title: title }) %>
-</head>
-<body class="min-h-screen bg-slate-50 text-slate-800 pb-20 sm:pb-0">
-  <%- include('partials/nav', { active: active }) %>
+<head><%- include('partials/head') %></head>
+<body data-auth="1">
+  <%- include('partials/nav', { active }) %>
+  <header class="appbar">
+    <div class="appbar-inner">
+      <div class="min-w-0 flex-1">
+        <span class="appbar-sub" id="todayLabel">&nbsp;</span>
+        <h1 class="appbar-title leading-tight">總覽</h1>
+      </div>
+      <a href="<%= url('/settings') %>" class="icon-btn md:hidden" aria-label="設定"><svg class="i"><use href="#i-cog"/></svg></a>
+    </div>
+  </header>
 
-  <main class="max-w-6xl mx-auto px-4 py-6 space-y-6">
-    <header class="flex items-center justify-between">
-      <div>
-        <h1 class="text-2xl font-semibold">點數總覽</h1>
-        <p class="text-sm text-slate-500">所有點數/載具的目前餘額</p>
-      </div>
-      <div class="flex gap-2">
-        <a href="<%= url('/points') %>" class="px-3 py-2 text-sm rounded-lg bg-brand-600 text-white hover:bg-brand-700">管理點數</a>
-      </div>
-    </header>
-
-    <!-- Total balance hero -->
-    <section class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 flex items-baseline justify-between gap-3 flex-wrap">
-      <div>
-        <div class="text-[11px] text-slate-500 uppercase tracking-widest">點數總資產</div>
-        <div class="text-3xl sm:text-4xl font-bold text-brand-700 mt-1" data-stat="totalBalance">—</div>
-      </div>
-      <div class="text-xs text-slate-400">所有點數種類加總（不同單位混合計算）</div>
-    </section>
-
-    <!-- Summary stat cards -->
-    <section class="grid grid-cols-2 md:grid-cols-4 gap-3" id="summaryStats">
-      <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
-        <div class="text-xs text-slate-500">點數種類</div>
-        <div class="text-2xl font-semibold mt-1" data-stat="count">—</div>
-      </div>
-      <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
-        <div class="text-xs text-slate-500">本月新增</div>
-        <div class="text-2xl font-semibold mt-1 text-emerald-600" data-stat="earned">—</div>
-      </div>
-      <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
-        <div class="text-xs text-slate-500">本月花費</div>
-        <div class="text-2xl font-semibold mt-1 text-rose-600" data-stat="spent">—</div>
-      </div>
-      <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
-        <div class="text-xs text-slate-500">有效活動</div>
-        <div class="text-2xl font-semibold mt-1 text-brand-600" data-stat="activeEvents">—</div>
+  <main class="page">
+    <section class="hero" id="hero" aria-live="polite">
+      <div class="relative z-10">
+        <div class="text-sm font-medium text-white/80">本期應得回饋</div>
+        <div class="mt-1 text-4xl font-extrabold tracking-tight money" id="heroReward"><span class="inline-block h-9 w-32 animate-pulse rounded-lg bg-white/20"></span></div>
+        <div class="mt-1 text-sm text-white/85" id="heroRemaining">&nbsp;</div>
+        <div class="mt-4 grid grid-cols-3 gap-2 border-t border-white/15 pt-3 text-xs text-white/75">
+          <div><div>本月刷卡</div><div class="mt-0.5 text-[15px] font-bold text-white money" id="heroSpend">—</div></div>
+          <div><div>本月入帳</div><div class="mt-0.5 text-[15px] font-bold text-white money" id="heroReceived">—</div></div>
+          <div><div>進行中活動</div><div class="mt-0.5 text-[15px] font-bold text-white" id="heroEvents">—</div></div>
+        </div>
       </div>
     </section>
 
-    <!-- Point Expiry Alerts -->
-    <section id="expiryAlertSection" class="hidden">
-      <h2 class="text-lg font-semibold mb-3 flex items-center gap-2">
-        <span class="text-amber-500">⚠️</span> 點數到期提醒
-      </h2>
-      <div id="expiryAlerts" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
+    <section class="mt-4 grid grid-cols-4 gap-2" aria-label="快速動作">
+      <a href="<%= url('/recommend') %>" class="card card-link flex flex-col items-center gap-1.5 py-3 text-xs font-semibold"><span class="grid h-10 w-10 place-items-center rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300"><svg class="i"><use href="#i-bolt"/></svg></span>刷哪張</a>
+      <a href="<%= url('/transactions?new=1') %>" class="card card-link flex flex-col items-center gap-1.5 py-3 text-xs font-semibold"><span class="grid h-10 w-10 place-items-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300"><svg class="i"><use href="#i-plus"/></svg></span>記一筆</a>
+      <a href="<%= url('/cashback?tab=audit') %>" class="card card-link flex flex-col items-center gap-1.5 py-3 text-xs font-semibold"><span class="grid h-10 w-10 place-items-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300"><svg class="i"><use href="#i-audit"/></svg></span>核對入帳</a>
+      <a href="<%= url('/cashback?new=1') %>" class="card card-link flex flex-col items-center gap-1.5 py-3 text-xs font-semibold"><span class="grid h-10 w-10 place-items-center rounded-xl bg-violet-50 text-violet-600 dark:bg-violet-500/15 dark:text-violet-300"><svg class="i"><use href="#i-gift"/></svg></span>加活動</a>
     </section>
 
-    <!-- Points cards grid -->
-    <section>
-      <h2 class="text-lg font-semibold mb-3">點數卡片</h2>
-      <div id="pointsGrid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-        <div class="text-sm text-slate-400 col-span-full py-4 flex items-center justify-center gap-2" data-loading><svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> 載入中…</div>
-      </div>
+    <section id="attentionSection" hidden>
+      <h2 class="section-title"><span>需要注意</span><span class="badge badge-rose" id="attentionCount"></span></h2>
+      <div class="card overflow-hidden"><div class="list" id="attentionList"></div></div>
     </section>
 
     <section>
-      <h2 class="text-lg font-semibold mb-3">所有回饋活動</h2>
-      <div id="expiringEvents" class="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div class="text-sm text-slate-400 col-span-full py-4 flex items-center justify-center gap-2" data-loading><svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> 載入中…</div>
+      <h2 class="section-title"><span>本期進行中活動</span><a href="<%= url('/cashback') %>">全部</a></h2>
+      <div id="eventsList" class="grid gap-3 md:grid-cols-2"><div class="skeleton h-28"></div><div class="skeleton h-28"></div></div>
+    </section>
+
+    <section>
+      <h2 class="section-title"><span>點數</span><a href="<%= url('/points') %>">管理</a></h2>
+      <a href="<%= url('/points') %>" class="card card-link card-pad grid grid-cols-3 gap-3" id="pointsCard">
+        <div><div class="stat-label">點數總價值</div><div class="stat-value money" id="ptValue">—</div></div>
+        <div><div class="stat-label">本月獲得</div><div class="stat-value text-emerald-600 dark:text-emerald-400 money" id="ptEarned">—</div></div>
+        <div><div class="stat-label">本月使用</div><div class="stat-value text-rose-600 dark:text-rose-400 money" id="ptSpent">—</div></div>
+      </a>
+    </section>
+
+    <section>
+      <h2 class="section-title"><span>回饋紀錄</span></h2>
+      <div class="card card-pad grid grid-cols-2 gap-3">
+        <div><div class="stat-label">上月刷卡</div><div class="stat-value money" id="lastMonthSpend">—</div></div>
+        <div><div class="stat-label">今年已入帳回饋</div><div class="stat-value text-emerald-600 dark:text-emerald-400 money" id="yearReceived">—</div></div>
       </div>
     </section>
   </main>
-
-  <!-- Modal: Event Details -->
-  <div id="eventDetailsModal" class="hidden fixed inset-0 z-40 bg-black/40 grid place-items-center px-3">
-    <div class="bg-white w-full min-w-0 max-w-md rounded-2xl shadow-xl p-5 animate-slide-up max-h-[90vh] flex flex-col">
-      <div class="flex justify-between items-start mb-4 gap-3">
-        <h3 class="text-lg font-semibold truncate min-w-0" id="eventDetailsTitle">活動詳情</h3>
-        <button data-dismiss="eventDetailsModal" class="flex-shrink-0 text-slate-400 hover:text-slate-600">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-        </button>
-      </div>
-      <div class="overflow-y-auto flex-1 min-w-0 space-y-4" id="eventDetailsContent">
-        <!-- Content injected via JS -->
-      </div>
-      <div class="mt-5 pt-4 border-t flex justify-end gap-2 shrink-0">
-        <a id="eventDetailsEditBtn" href="#" class="px-4 py-2 text-sm rounded-lg bg-brand-600 text-white hover:bg-brand-700">前往編輯</a>
-      </div>
-    </div>
-  </div>
 
   <%- include('partials/footer') %>
   <script src="<%= asset('/js/dashboard.js') %>"></script>

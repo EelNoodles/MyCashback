@@ -2,112 +2,99 @@
 
 const cron = require('node-cron');
 const { Op } = require('sequelize');
-const { PointExpiry, Point, FcmToken, User } = require('../models');
+const { FcmToken } = require('../models');
 const { getAdmin } = require('../config/firebase');
 const logger = require('../config/logger');
 
 /**
- * Every day at 21:00 Asia/Taipei:
- *   1. Find all active PointExpiry records expiring within 7 days
- *   2. Group by user
- *   3. Send FCM push notification to each user's registered devices
+ * Daily reminder push (21:00 in APP_TIMEZONE). For every user with a
+ * registered device, builds the same attention list the dashboard shows and
+ * sends the actionable items:
+ *   - points expiring within 7 days
+ *   - campaigns ending within 3 days that still have reward left to earn
+ *   - cycles resetting tomorrow with reward left in this cycle
+ *   - campaigns that require registration but aren't registered yet
  */
-function startExpiryNotificationCron() {
-  // '0 21 * * *' = daily at 21:00
-  cron.schedule('0 21 * * *', async () => {
-    logger.info('[Cron] Running point expiry notification check');
-    try {
-      const today = new Date();
-      const todayStr = today.toISOString().slice(0, 10);
-      const in7Days = new Date(today.getTime() + 7 * 86400000).toISOString().slice(0, 10);
 
-      // Get all active expiries within 7 days
-      const expiries = await PointExpiry.findAll({
-        where: {
-          status: 'active',
-          expiryDate: { [Op.between]: [todayStr, in7Days] }
-        },
-        include: [{ model: Point, as: 'point', attributes: ['id', 'name', 'issuer'] }],
-        order: [['expiryDate', 'ASC']]
-      });
+const fmt = (n) => Number(n || 0).toLocaleString('zh-TW', { maximumFractionDigits: 2 });
 
-      if (!expiries.length) {
-        logger.info('[Cron] No expiring points found');
-        return;
-      }
-
-      // Group by userId
-      const byUser = new Map();
-      for (const exp of expiries) {
-        if (!byUser.has(exp.userId)) byUser.set(exp.userId, []);
-        byUser.get(exp.userId).push(exp);
-      }
-
-      const admin = getAdmin();
-      const messaging = admin.messaging();
-
-      for (const [userId, userExpiries] of byUser) {
-        // Get FCM tokens for this user
-        const tokens = await FcmToken.findAll({ where: { userId } });
-        if (!tokens.length) continue;
-
-        // Build notification body
-        const lines = userExpiries.map((e) => {
-          const pointName = e.point ? e.point.name : '未知點數';
-          const daysLeft = Math.ceil((new Date(e.expiryDate) - today) / 86400000);
-          const dayStr = daysLeft <= 0 ? '今天到期' : `${daysLeft} 天後到期`;
-          return `${pointName} ${Number(e.amount).toLocaleString()} 點 — ${dayStr} (${e.expiryDate})`;
-        });
-
-        const title = `⚠️ ${userExpiries.length} 筆點數即將到期`;
-        const body = lines.slice(0, 5).join('\n') + (lines.length > 5 ? `\n...還有 ${lines.length - 5} 筆` : '');
-
-        const deviceTokens = tokens.map((t) => t.token);
-
-        try {
-          const result = await messaging.sendEachForMulticast({
-            tokens: deviceTokens,
-            notification: { title, body },
-            data: { type: 'point_expiry', count: String(userExpiries.length) },
-            webpush: {
-              notification: {
-                icon: '/static/icons/icon-192.png',
-                badge: '/static/icons/icon-192.png',
-                vibrate: [200, 100, 200]
-              }
-            }
-          });
-
-          logger.info(`[Cron] Sent to user ${userId}: ${result.successCount} success, ${result.failureCount} fail`);
-
-          // Clean up invalid tokens
-          if (result.failureCount > 0) {
-            const invalidTokens = [];
-            result.responses.forEach((resp, idx) => {
-              if (!resp.success && resp.error &&
-                  (resp.error.code === 'messaging/invalid-registration-token' ||
-                   resp.error.code === 'messaging/registration-token-not-registered')) {
-                invalidTokens.push(deviceTokens[idx]);
-              }
-            });
-            if (invalidTokens.length) {
-              await FcmToken.destroy({ where: { token: { [Op.in]: invalidTokens } } });
-              logger.info(`[Cron] Cleaned up ${invalidTokens.length} invalid tokens`);
-            }
-          }
-        } catch (err) {
-          logger.error(`[Cron] Failed to send to user ${userId}`, { err: err.message });
-        }
-      }
-      logger.info('[Cron] Notification cycle complete');
-    } catch (err) {
-      logger.error('[Cron] Expiry notification error', { err: err.message });
-    }
-  }, {
-    timezone: 'Asia/Taipei'
-  });
-
-  logger.info('[Cron] Point expiry notification scheduled at 21:00 Asia/Taipei');
+function lineFor(a) {
+  switch (a.type) {
+    case 'point_expiring':
+      return a.daysLeft <= 7 ? `⏰ ${a.title} ${fmt(a.amount)} 點${a.daysLeft <= 0 ? '今天' : ` ${a.daysLeft} 天後`}到期` : null;
+    case 'event_ending':
+      return a.daysLeft <= 3 ? `🏁 ${a.title} 剩 ${a.daysLeft} 天${a.remainingReward > 0 ? `，還可拿 ${fmt(a.remainingReward)}` : ''}` : null;
+    case 'cycle_ending':
+      return a.daysLeft <= 1 ? `🔄 ${a.title} 本期今天結束，還可拿 ${fmt(a.remainingReward)}` : null;
+    case 'registration_needed':
+      return `📝 ${a.title} 需要登錄，還沒登錄`;
+    default:
+      return null;
+  }
 }
 
-module.exports = { startExpiryNotificationCron };
+async function buildMessage(userId) {
+  const { buildSummary } = require('../controllers/dashboardController');
+  const summary = await buildSummary(userId);
+  const lines = summary.attention.map(lineFor).filter(Boolean);
+  if (!lines.length) return null;
+  return {
+    title: `MyCashback：${lines.length} 件事需要注意`,
+    body: lines.slice(0, 5).join('\n') + (lines.length > 5 ? `\n…還有 ${lines.length - 5} 項` : ''),
+    count: lines.length
+  };
+}
+
+async function runOnce() {
+  const tokens = await FcmToken.findAll();
+  if (!tokens.length) return { users: 0, sent: 0 };
+  const byUser = new Map();
+  for (const t of tokens) {
+    if (!byUser.has(t.userId)) byUser.set(t.userId, []);
+    byUser.get(t.userId).push(t.token);
+  }
+  const admin = getAdmin();
+  if (!admin.apps || !admin.apps.length) {
+    logger.warn('[Cron] Firebase not configured; skipping push');
+    return { users: byUser.size, sent: 0 };
+  }
+  const base = (process.env.BASE_URL || '').replace(/\/$/, '');
+  let sent = 0;
+  for (const [userId, deviceTokens] of byUser) {
+    try {
+      const msg = await buildMessage(userId);
+      if (!msg) continue;
+      const result = await admin.messaging().sendEachForMulticast({
+        tokens: deviceTokens,
+        notification: { title: msg.title, body: msg.body },
+        data: { type: 'daily_digest', count: String(msg.count), url: `${base}/` },
+        webpush: {
+          notification: { icon: `${base}/static/icons/icon-192.png`, badge: `${base}/static/icons/icon-192.png` },
+          fcmOptions: { link: `${base}/` }
+        }
+      });
+      sent += result.successCount;
+      const invalid = [];
+      result.responses.forEach((r, i) => {
+        const code = r.error && r.error.code;
+        if (!r.success && (code === 'messaging/invalid-registration-token' || code === 'messaging/registration-token-not-registered')) {
+          invalid.push(deviceTokens[i]);
+        }
+      });
+      if (invalid.length) await FcmToken.destroy({ where: { token: { [Op.in]: invalid } } });
+    } catch (err) {
+      logger.error(`[Cron] push failed for user ${userId}`, { err: err.message });
+    }
+  }
+  logger.info(`[Cron] daily digest: ${sent} notifications sent to ${byUser.size} user(s)`);
+  return { users: byUser.size, sent };
+}
+
+function startNotificationCron() {
+  cron.schedule('0 21 * * *', () => {
+    runOnce().catch((err) => logger.error('[Cron] digest error', { err: err.message }));
+  }, { timezone: process.env.TZ || 'Asia/Taipei' });
+  logger.info(`[Cron] daily digest scheduled at 21:00 ${process.env.TZ || 'Asia/Taipei'}`);
+}
+
+module.exports = { startNotificationCron, startExpiryNotificationCron: startNotificationCron, buildMessage, runOnce };

@@ -1,1397 +1,755 @@
 (function () {
   'use strict';
   const A = window.App;
+  const { esc, icon } = A;
+  const F = A.fmt;
+  const $ = (id) => document.getElementById(id);
 
-  const listEl = document.getElementById('eventsList');
-  const qInput = document.getElementById('qInput');
-  const cardFilter = document.getElementById('cardFilter');
-  const pmFilter = document.getElementById('pmFilter');
-  const statusChips = document.querySelectorAll('.status-chip');
-  const groupBySelect = document.getElementById('groupBySelect');
-  const sortBySelect = document.getElementById('sortBySelect');
-
-  const newEventBtn = document.getElementById('newEventBtn');
-  const aiParseBtn = document.getElementById('aiParseBtn');
-  const aiKeysBtn = document.getElementById('aiKeysBtn');
-
-  // AI keys modal
-  const aiKeysList = document.getElementById('aiKeysList');
-  const aiKeysEmpty = document.getElementById('aiKeysEmpty');
-  const aiKeysError = document.getElementById('aiKeysError');
-  const aiKeyAddForm = document.getElementById('aiKeyAddForm');
-  const aiKeyAddError = document.getElementById('aiKeyAddError');
-
-  // Form
-  const eventForm = document.getElementById('eventForm');
-  const eventFormError = document.getElementById('eventFormError');
-  const deleteEventBtn = document.getElementById('deleteEventBtn');
-  const eventModalTitle = document.getElementById('eventModalTitle');
-  const cardChipsBox = document.getElementById('cardChips');
-  const pmChipsBox = document.getElementById('pmChips');
-  const cycleAnchorWrap = document.getElementById('cycleAnchorWrap');
-  const cycleAnchorLabel = document.getElementById('cycleAnchorLabel');
-  const cycleHint = document.getElementById('cycleHint');
-  const requireMerchantMatchInput = document.getElementById('requireMerchantMatchInput');
-  const merchantKeywordsWrap = document.getElementById('merchantKeywordsWrap');
-  const merchantAiBtn = document.getElementById('merchantAiBtn');
-  const merchantAiBox = document.getElementById('merchantAiBox');
-  const merchantAiInput = document.getElementById('merchantAiInput');
-  const merchantAiCancelBtn = document.getElementById('merchantAiCancelBtn');
-  const merchantAiAnalyzeBtn = document.getElementById('merchantAiAnalyzeBtn');
-  const merchantAiError = document.getElementById('merchantAiError');
-  const excludeMerchantMatchInput = document.getElementById('excludeMerchantMatchInput');
-  const excludeMerchantKeywordsWrap = document.getElementById('excludeMerchantKeywordsWrap');
-  const excludeMerchantAiBtn = document.getElementById('excludeMerchantAiBtn');
-  const excludeMerchantAiBox = document.getElementById('excludeMerchantAiBox');
-  const excludeMerchantAiInput = document.getElementById('excludeMerchantAiInput');
-  const excludeMerchantAiCancelBtn = document.getElementById('excludeMerchantAiCancelBtn');
-  const excludeMerchantAiAnalyzeBtn = document.getElementById('excludeMerchantAiAnalyzeBtn');
-  const excludeMerchantAiError = document.getElementById('excludeMerchantAiError');
-
-  // AI
-  const aiInput = document.getElementById('aiInput');
-  const aiPreview = document.getElementById('aiPreview');
-  const aiError = document.getElementById('aiError');
-  const aiAnalyzeBtn = document.getElementById('aiAnalyzeBtn');
-  const aiApplyBtn = document.getElementById('aiApplyBtn');
-
-  // AI search
-  const modeChips = document.querySelectorAll('.mode-chip');
-  const normalFilters = document.getElementById('normalFilters');
-  const aiSearchWrap = document.getElementById('aiSearchWrap');
-  const aiSearchInput = document.getElementById('aiSearchInput');
-  const aiSearchBtn = document.getElementById('aiSearchBtn');
-  const aiWebToggle = document.getElementById('aiWebToggle');
-  const aiModelSelect = document.getElementById('aiModelSelect');
-  const aiParseModelSelect = document.getElementById('aiParseModel');
-
-  // Rewards audit
-  const rewardsAuditWrap = document.getElementById('rewardsAuditWrap');
-  const raCardFilter = document.getElementById('raCardFilter');
-  const raPmFilter = document.getElementById('raPmFilter');
-  const raQInput = document.getElementById('raQInput');
-  const raStatusChips = document.querySelectorAll('.ra-status-chip');
-  const raRangeChips = document.querySelectorAll('.ra-range-chip');
-  const raCustomRangeWrap = document.getElementById('raCustomRangeWrap');
-  const raFromInput = document.getElementById('raFromInput');
-  const raToInput = document.getElementById('raToInput');
-
-  const AI_MODEL_STORAGE_KEY = 'mycashback.aiModel';
-  const GROUP_BY_STORAGE_KEY = 'mycashback.groupBy';
-  const SORT_BY_STORAGE_KEY = 'mycashback.sortBy';
-
-  let state = {
-    mode: 'normal',
-    aiModel: localStorage.getItem(AI_MODEL_STORAGE_KEY) || '',
-    aiModels: [],
-    status: 'active',
+  const params = new URLSearchParams(location.search);
+  const state = {
+    tab: ['list', 'audit', 'ai'].includes(params.get('tab')) ? params.get('tab') : 'list',
+    status: A.store.get('cb.status', 'ongoing'),
     q: '',
     cardId: '',
     pmId: '',
-    groupBy: localStorage.getItem(GROUP_BY_STORAGE_KEY) || 'card',
-    sortBy: localStorage.getItem(SORT_BY_STORAGE_KEY) || 'deadline',
+    sort: A.store.get('cb.sort', 'deadline'),
+    group: A.store.get('cb.group', 'none'),
+    events: [],
     cards: [],
     pms: [],
-    events: [],
-    aiResult: null,
-    selectedCardIds: new Set(),
-    selectedPmIds: new Set(),
-    ra: {
-      status: 'active',
-      cardId: '',
-      pmId: '',
-      q: '',
-      range: 'cycle',
-      events: []
-    }
+    range: 'cycle',
+    audit: null,
+    aiModels: [],
+    aiModel: A.store.get('aiModel', ''),
+    form: { cards: new Set(), pms: new Set(), mode: 'percent', scope: 'perTransaction' },
+    seq: 0
   };
 
-  function debounce(fn, ms) {
-    let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
-  }
-
-  function escapeHtml(s) {
-    return String(s == null ? '' : s)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
-
-  function parseMerchantKeywordsList(raw) {
-    return String(raw || '').split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
-  }
-
-  function merchantKeywordChipsHtml(raw) {
-    const keywords = parseMerchantKeywordsList(raw);
-    if (!keywords.length) return '<span class="text-slate-400">（尚未設定關鍵字）</span>';
-    return keywords.map((kw) => `<span class="pm-badge">${escapeHtml(kw)}</span>`).join('');
-  }
-
-  // "四捨五入" / "無條件捨去", plus "（至小數點後 N 位）" when the event
-  // rounds to a non-zero number of decimal places instead of a whole unit.
-  function roundingLabel(u) {
-    const base = u.rewardRounding === 'floor' ? '無條件捨去' : '四捨五入';
-    const precision = Number(u.rewardPrecision) || 0;
-    return precision > 0 ? `${base}（至小數點後${precision}位）` : base;
-  }
-
-  const SPINNER_SVG = '<svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>';
-
-  const NETWORK_LABELS = {
-    visa: 'VISA', mastercard: 'MC', jcb: 'JCB',
-    amex: 'AMEX', unionpay: 'UP', other: ''
+  const CYCLE_TEXT = { none: '整個活動期間', weekly: '每週', biweekly: '每兩週', monthly: '每月' };
+  const WEEKDAY = ['', '週一', '週二', '週三', '週四', '週五', '週六', '週日'];
+  const REASON = {
+    excludedMerchant: (x) => `排除商家${x.keyword ? `「${x.keyword}」` : ''}`,
+    merchantNotMatched: () => '非限定商家',
+    belowMinimum: () => '未達單筆門檻'
   };
 
-  // ─── Cycle Calculation ───
-  function getNextResetDate(today, cycleType, anchorDay) {
-    const d = new Date(today);
-    if (cycleType === 'monthly') {
-      const anchor = Math.min(anchorDay || 1, 28);
-      let nextReset = new Date(d.getFullYear(), d.getMonth(), anchor);
-      if (nextReset <= d) {
-        nextReset = new Date(d.getFullYear(), d.getMonth() + 1, anchor);
-      }
-      return nextReset;
-    }
-    if (cycleType === 'weekly' || cycleType === 'biweekly') {
-      const anchor = (anchorDay || 1); // 1=Mon
-      const currentDay = d.getDay() || 7; // Sunday=7
-      let daysUntil = anchor - currentDay;
-      if (daysUntil <= 0) daysUntil += 7;
-      if (cycleType === 'biweekly' && daysUntil <= 7) daysUntil += 7; // rough approx
-      const next = new Date(d);
-      next.setDate(next.getDate() + daysUntil);
-      return next;
-    }
-    return null;
+  // ─────────────────────────── Tabs ───────────────────────────
+  function setTab(tab) {
+    state.tab = tab;
+    A.setPressed($('tabs'), '[data-tab]', tab, 'tab');
+    ['list', 'audit', 'ai'].forEach((t) => { $(`tab-${t}`).hidden = t !== tab; });
+    const qs = new URLSearchParams(location.search);
+    if (tab === 'list') qs.delete('tab'); else qs.set('tab', tab);
+    history.replaceState(history.state, '', location.pathname + (qs.toString() ? '?' + qs : ''));
+    if (tab === 'audit') loadAudit();
+    if (tab === 'ai' && !state.aiModels.length) loadModels();
   }
-
-  function calcCycleInfo(ev) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayStr = today.toISOString().slice(0, 10);
-    const result = { expired: false, eventRemaining: null, cycleRemaining: null };
-
-    if (ev.endDate && ev.endDate < todayStr) {
-      result.expired = true;
-      return result;
-    }
-
-    // Total event remaining
-    if (ev.endDate) {
-      const endMs = new Date(ev.endDate) - today;
-      const totalDays = Math.ceil(endMs / 86400000);
-      const months = Math.floor(totalDays / 30);
-      const days = totalDays % 30;
-      result.eventRemaining = { months, days, totalDays };
-    }
-
-    // Cycle remaining
-    if (ev.cycleType && ev.cycleType !== 'none') {
-      const nextReset = getNextResetDate(today, ev.cycleType, ev.cycleAnchorDay);
-      if (nextReset) {
-        const cycleDays = Math.ceil((nextReset - today) / 86400000);
-
-        // Compute cycle length for progress
-        let cycleLength = 30;
-        if (ev.cycleType === 'weekly') cycleLength = 7;
-        else if (ev.cycleType === 'biweekly') cycleLength = 14;
-        else if (ev.cycleType === 'monthly') cycleLength = 30;
-
-        const elapsed = cycleLength - cycleDays;
-        const progress = Math.max(0, Math.min(100, (elapsed / cycleLength) * 100));
-
-        result.cycleRemaining = { days: cycleDays, cycleLength, progress };
-      }
-    }
-
-    return result;
-  }
-
-  const CYCLE_LABELS = { weekly: '本週', biweekly: '本雙週', monthly: '本月' };
-  const DAY_LABELS = ['', '一', '二', '三', '四', '五', '六', '日'];
-  // Wording prefix for the "cap-reaching spend" callout. Uses '活動內' when
-  // there's no cycle since the reward cap applies over the whole event.
-  const SPEND_PREFIX = { weekly: '本週', biweekly: '本雙週', monthly: '本月', none: '活動內' };
-
-  // Given a percent cashback and a period reward cap, work out how much the
-  // user can spend within one cycle before further spending stops earning
-  // more cashback (the "hit-the-cap" spend). Returns null when either input
-  // is missing so callers can skip the callout entirely.
-  function calcMaxUsefulSpend(ev) {
-    const pct = Number(ev.cashbackPercent);
-    const cap = Number(ev.maxReward);
-    if (!(pct > 0) || !(cap > 0)) return null;
-    return cap * 100 / pct;
-  }
-
-  function maxSpendCalloutHtml(ev) {
-    const s = calcMaxUsefulSpend(ev);
-    if (s == null) return '';
-    const prefix = SPEND_PREFIX[ev.cycleType || 'none'] || '活動內';
-    return `<div class="mt-2 text-xs bg-emerald-50 border border-emerald-100 rounded-lg px-2.5 py-1.5 text-emerald-800 flex items-center gap-1.5">
-      <span aria-hidden="true">🎯</span>
-      <span><strong>${prefix}最高消費</strong> NT$${A.fmtNumber(Math.ceil(s))} 即拿滿回饋（上限 NT$${A.fmtNumber(Number(ev.maxReward))}）</span>
-    </div>`;
-  }
-
-  // Real usage (from actual reported card transactions), computed server-side
-  // in cashbackCycleService. Falls back to the theoretical estimate above when
-  // the event has no linked cards to match transactions against.
-  function usageCalloutHtml(ev) {
-    const u = ev.usage;
-    if (!u) return maxSpendCalloutHtml(ev);
-
-    const prefix = SPEND_PREFIX[ev.cycleType || 'none'] || '活動內';
-    let body = `<div class="flex items-center justify-between gap-2">
-      <span>${prefix}已刷 <strong>NT$${A.fmtNumber(u.usedAmount)}</strong>${u.txnCount ? `（${u.txnCount} 筆）` : ''}</span>
-    </div>`;
-
-    if (u.cap != null) {
-      if (u.capReached) {
-        body += `<div class="mt-1 font-medium text-rose-600">🎉 本${prefix === '活動內' ? '活動' : prefix}已達回饋上限 NT$${A.fmtNumber(u.cap)}</div>`;
-      } else if (u.remainingCapAmount != null) {
-        body += `<div class="mt-1 text-emerald-700">🎯 還可刷 <strong>NT$${A.fmtNumber(Math.ceil(u.remainingCapAmount))}</strong> 即達上限</div>`;
-      } else if (u.remainingCapTransactions != null) {
-        body += `<div class="mt-1 text-emerald-700">🎯 還可有 <strong>${A.fmtNumber(u.remainingCapTransactions)}</strong> 筆符合門檻的交易即達上限</div>`;
-      }
-      const pct = u.estimatedReward != null ? Math.max(0, Math.min(100, (u.estimatedReward / u.cap) * 100)) : 0;
-      const barColor = pct >= 100 ? 'progress-bar__fill--rose' : 'progress-bar__fill--brand';
-      body += `<div class="mt-1.5 progress-bar"><div class="${barColor} progress-bar__fill" style="width:${pct.toFixed(1)}%"></div></div>`;
-    }
-
-    if (u.estimatedReward != null) {
-      const calcLabel = u.rewardCalcMode === 'perTransaction' ? '逐筆計算' : '整筆計算';
-      const hasDetail = u.rewardCalcMode === 'perTransaction' && Array.isArray(u.txnRewards) && u.txnRewards.length > 0;
-      body += `<div class="mt-1.5 pt-1.5 border-t border-slate-200 flex items-center justify-between gap-2">
-        <span>💰 預估回饋 <strong class="text-brand-700">NT$${A.fmtNumber(u.estimatedReward)}</strong>
-          <span class="text-slate-400">（${roundingLabel(u)}・${calcLabel}）</span>
-        </span>
-        ${hasDetail ? `<button type="button" class="js-reward-detail-btn text-brand-600 hover:underline flex-shrink-0" data-event-id="${ev.id}">查看明細</button>` : ''}
-      </div>`;
-    }
-
-    return `<div class="mt-2 text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-slate-700">${body}</div>`;
-  }
-
-  // Per-transaction reward breakdown modal (only reachable when an event's
-  // rewardCalcMode is "perTransaction" — used to double-check a card issuer
-  // actually credited the cashback the math says each transaction earned).
-  // Handles both cases: rewardCalcMode=perTransaction (u.txnRewards has each
-  // transaction's own computed reward) and aggregate mode (only u.transactions
-  // is available — the audit view still wants to show which transactions fed
-  // into the one lump-sum calculation, just without a per-row reward column).
-  function openRewardDetail(ev) {
-    const u = ev.usage;
-    const hasPerTxnRewards = Array.isArray(u.txnRewards) && u.txnRewards.length > 0;
-    const list = hasPerTxnRewards ? u.txnRewards : (u.transactions || []);
-
-    const rows = list.map((t) => `
-      <tr class="border-t border-slate-100">
-        <td class="py-1.5 pr-2 text-slate-500 whitespace-nowrap">${A.fmtDate(t.transactionAt)}</td>
-        <td class="py-1.5 pr-2 text-slate-600 truncate max-w-[140px]">${escapeHtml(t.note || '—')}</td>
-        <td class="py-1.5 pr-2 text-right whitespace-nowrap">NT$${A.fmtNumber(t.amount)}</td>
-        ${hasPerTxnRewards ? `<td class="py-1.5 text-right font-medium text-brand-700 whitespace-nowrap">+${A.fmtNumber(t.reward)}</td>` : ''}
-      </tr>`).join('');
-
-    const formulaNote = hasPerTxnRewards
-      ? `每筆消費各自 × 回饋% 並${roundingLabel(u)}後加總。`
-      : (ev.cashbackPercent != null
-        ? `消費加總 NT$${A.fmtNumber(u.usedAmount)} × ${ev.cashbackPercent}% 後${roundingLabel(u)}一次，得出總回饋（此活動採整筆計算，非逐筆加總，故不逐筆顯示回饋金額）。`
-        : `此活動為固定回饋，符合門檻的交易各得 NT$${A.fmtNumber(ev.cashbackFixed)}。`);
-
-    document.getElementById('rewardDetailTitle').textContent = `${ev.title} － 回饋明細`;
-    document.getElementById('rewardDetailBody').innerHTML = `
-      <p class="text-[11px] text-slate-400 mb-2">${formulaNote}</p>
-      <table class="w-full text-xs">
-        <thead>
-          <tr class="text-slate-400 text-left">
-            <th class="py-1 pr-2 font-normal">交易時間</th>
-            <th class="py-1 pr-2 font-normal">備註</th>
-            <th class="py-1 pr-2 font-normal text-right">金額</th>
-            ${hasPerTxnRewards ? '<th class="py-1 font-normal text-right">回饋</th>' : ''}
-          </tr>
-        </thead>
-        <tbody>${rows || `<tr><td colspan="${hasPerTxnRewards ? 4 : 3}" class="py-4 text-center text-slate-400">無資料</td></tr>`}</tbody>
-      </table>`;
-    document.getElementById('rewardDetailTotal').textContent =
-      `合計回饋 NT$${A.fmtNumber(u.estimatedReward)}（共 ${list.length} 筆交易）`;
-    A.openModal('rewardDetailModal');
-  }
-
-  document.addEventListener('click', (e) => {
-    const btn = e.target.closest('.js-reward-detail-btn');
-    if (!btn) return;
-    e.stopPropagation();
-    const id = parseInt(btn.dataset.eventId, 10);
-    // Same event id can be cached in both lists (normal-list usage lacks the
-    // full transaction breakdown the audit view needs) — prefer whichever
-    // list matches the mode actually showing the button right now.
-    const primary = state.mode === 'rewards' ? state.ra.events : state.events;
-    const fallback = state.mode === 'rewards' ? state.events : state.ra.events;
-    const ev = primary.find((x) => x.id === id) || fallback.find((x) => x.id === id);
-    if (ev) openRewardDetail(ev);
+  $('tabs').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-tab]');
+    if (b) setTab(b.dataset.tab);
   });
 
-  // ─── Renderers ───
-  function eventCardEl(ev) {
-    const card = document.createElement('div');
-    card.className = 'card p-3 cursor-pointer hover:shadow-md transition';
-    const info = calcCycleInfo(ev);
-
-    const reward = ev.cashbackPercent
-      ? `${ev.cashbackPercent}% 回饋`
-      : (ev.cashbackFixed ? `+${A.fmtNumber(ev.cashbackFixed)}` : '—');
-
-    // Card chips with mini-card styling
-    const cardChips = (ev.cards || []).map((c) => {
-      const net = c.network ? ` · ${NETWORK_LABELS[c.network] || ''}` : '';
-      if (c.imageUrl) {
-        return `<span class="credit-card-mini"><img class="credit-card-mini__img" src="${A.url(c.imageUrl)}" alt="" />${c.name}${net}</span>`;
-      }
-      return `<span class="credit-card-mini">💳 ${c.name}${net}</span>`;
-    }).join('');
-
-    const pmChips = (ev.paymentMethods || []).map((p) => {
-      if (p.imageUrl) {
-        return `<span class="pm-badge"><img class="pm-badge__img" src="${A.url(p.imageUrl)}" alt="" />${p.name}</span>`;
-      }
-      return `<span class="pm-badge">💸 ${p.name}</span>`;
-    }).join('');
-
-    // Build countdown display
-    let countdownHtml = '';
-    if (info.expired) {
-      countdownHtml = '<div class="text-xs text-rose-500 font-medium">已結束</div>';
-    } else {
-      // Event remaining
-      let eventLeft = '';
-      if (info.eventRemaining) {
-        const { months, days, totalDays } = info.eventRemaining;
-        if (totalDays <= 0) {
-          eventLeft = '今天最後一天';
-        } else if (months > 0) {
-          eventLeft = `活動剩 ${months} 月 ${days} 天`;
-        } else {
-          eventLeft = `活動剩 ${days} 天`;
-        }
-
-        // Event progress
-        if (ev.startDate && ev.endDate) {
-          const startMs = new Date(ev.startDate).getTime();
-          const endMs = new Date(ev.endDate).getTime();
-          const nowMs = new Date().getTime();
-          const totalMs = endMs - startMs;
-          const elapsedMs = nowMs - startMs;
-          const pct = totalMs > 0 ? Math.max(0, Math.min(100, (elapsedMs / totalMs) * 100)) : 0;
-          const barColor = pct > 80 ? 'progress-bar__fill--rose' : (pct > 50 ? 'progress-bar__fill--amber' : 'progress-bar__fill--brand');
-          eventLeft += `<div class="flex items-center gap-2 mt-1"><div class="progress-bar"><div class="${barColor} progress-bar__fill" style="width:${pct.toFixed(1)}%"></div></div><span class="text-[9px] text-slate-400">${Math.round(pct)}%</span></div>`;
-        }
-      } else {
-        eventLeft = '無期限';
-      }
-
-      // Cycle remaining
-      let cycleLeft = '';
-      if (info.cycleRemaining) {
-        const label = CYCLE_LABELS[ev.cycleType] || '';
-        const cDays = info.cycleRemaining.days;
-        const pct = info.cycleRemaining.progress;
-        cycleLeft = `<div class="text-[10px] text-slate-500 mt-1">${label}剩 <strong class="text-slate-700">${cDays}</strong> 天</div>`;
-        cycleLeft += `<div class="flex items-center gap-2 mt-0.5"><div class="progress-bar"><div class="progress-bar__fill progress-bar__fill--brand" style="width:${pct.toFixed(1)}%"></div></div></div>`;
-      }
-
-      countdownHtml = `<div class="text-[10px] text-slate-500">${eventLeft}</div>${cycleLeft}`;
-    }
-
-    card.innerHTML = `
-      <div class="flex items-start justify-between gap-3">
-        <div class="min-w-0 flex-1">
-          <div class="font-medium flex items-center gap-2">
-            <span class="truncate min-w-0" title="${ev.title}">${ev.title}</span>
-            ${ev.sourceUrl ? `<a href="${ev.sourceUrl}" target="_blank" class="text-brand-600 hover:text-brand-700 flex-shrink-0" title="開啟活動連結"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>` : ''}
-          </div>
-          <div class="text-xs text-slate-500 mt-0.5">${A.fmtDateOnly(ev.startDate)} ~ ${A.fmtDateOnly(ev.endDate)}</div>
-        </div>
-        <div class="text-right flex-shrink-0">
-          <div class="text-base font-semibold text-brand-600">${reward}</div>
-        </div>
-      </div>
-      <div class="mt-2">${countdownHtml}</div>
-      ${usageCalloutHtml(ev)}
-      <div class="mt-3 flex flex-wrap gap-1">${cardChips}${pmChips}</div>
-      <div class="mt-3 grid grid-cols-3 gap-2 text-xs text-slate-500">
-        <div><span class="text-slate-400">最低門檻：</span>${ev.minimumSpend != null ? A.fmtNumber(ev.minimumSpend) : '—'}</div>
-        <div><span class="text-slate-400">回饋上限：</span>${ev.maxReward != null ? A.fmtNumber(ev.maxReward) : '—'}</div>
-        <div class="text-right">
-          <button class="text-brand-600 hover:underline" data-edit="${ev.id}">編輯</button>
-        </div>
-      </div>`;
-    
-    // Open details on click (ignore if clicked on the edit button or sourceUrl link)
-    card.addEventListener('click', (e) => {
-      if (e.target.closest('button[data-edit]') || e.target.closest('a')) return;
-      openEventDetails(ev, `${cardChips}${pmChips}`, countdownHtml);
-    });
-
-    card.querySelector('[data-edit]').addEventListener('click', () => openEventModal(ev));
-    return card;
-  }
-
-  function openEventDetails(ev, tagsHtml, countdownHtml) {
-    document.getElementById('eventDetailsTitle').textContent = ev.title;
-    
-    let reward = '';
-    if (ev.cashbackPercent) reward = ev.cashbackPercent + '%';
-    else if (ev.cashbackFixed) reward = '+' + A.fmtNumber(ev.cashbackFixed);
-    else reward = '無';
-
-    document.getElementById('eventDetailsContent').innerHTML = `
-      <div class="text-sm text-slate-600">
-        <div class="mb-2"><strong>活動期間：</strong> ${A.fmtDateOnly(ev.startDate)} ~ ${A.fmtDateOnly(ev.endDate)}</div>
-        <div class="mb-2"><strong>狀態 / 倒數：</strong> ${countdownHtml}</div>
-        <div class="mb-2"><strong>回饋比例：</strong> <span class="text-brand-600 font-semibold">${reward}</span></div>
-        <div class="mb-2"><strong>最低門檻：</strong> ${ev.minimumSpend != null ? A.fmtNumber(ev.minimumSpend) : '—'}</div>
-        <div class="mb-2"><strong>回饋上限：</strong> ${ev.maxReward != null ? A.fmtNumber(ev.maxReward) : '—'}</div>
-        <div class="mb-2"><strong>目前週期消費：</strong> <div class="mt-1">${usageCalloutHtml(ev)}</div></div>
-        <div class="mb-2"><strong>適用卡片/支付：</strong> <div class="mt-1 flex flex-wrap gap-1">${tagsHtml}</div></div>
-        ${ev.requireMerchantMatch ? `<div class="mb-2"><strong>🏪 限定商家：</strong> <div class="mt-1 flex flex-wrap gap-1">${merchantKeywordChipsHtml(ev.merchantKeywords)}</div></div>` : ''}
-        ${ev.excludeMerchantMatch ? `<div class="mb-2"><strong>🚫 排除商家：</strong> <div class="mt-1 flex flex-wrap gap-1">${merchantKeywordChipsHtml(ev.excludeMerchantKeywords)}</div></div>` : ''}
-        ${ev.description ? `<div class="mb-2"><strong>活動說明：</strong><p class="mt-1 whitespace-pre-wrap">${ev.description}</p></div>` : ''}
-        ${ev.sourceUrl ? `<div class="mb-2"><strong>參考連結：</strong> <a href="${ev.sourceUrl}" target="_blank" class="text-brand-600 hover:underline break-all">${ev.sourceUrl}</a></div>` : ''}
-      </div>
-    `;
-    
-    const editBtn = document.getElementById('eventDetailsEditBtn');
-    editBtn.onclick = () => {
-      A.closeModal('eventDetailsModal');
-      openEventModal(ev);
-    };
-    A.openModal('eventDetailsModal');
-  }
-
-  function chipButton(box, item, selectedSet) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.dataset.id = item.id;
-    btn.className = 'chip';
-    btn.textContent = item.name;
-    function refresh() {
-      btn.classList.toggle('chip-active', selectedSet.has(item.id));
-    }
-    refresh();
-    btn.addEventListener('click', () => {
-      if (selectedSet.has(item.id)) selectedSet.delete(item.id);
-      else selectedSet.add(item.id);
-      refresh();
-    });
-    box.appendChild(btn);
-    return btn;
-  }
-
-  // ─── Cycle form UX ───
-  function updateCycleUI() {
-    const type = eventForm.cycleType.value;
-    if (type === 'none') {
-      cycleAnchorWrap.style.display = 'none';
-      cycleHint.textContent = '設定後活動將依週期顯示倒數';
-    } else if (type === 'weekly' || type === 'biweekly') {
-      cycleAnchorWrap.style.display = '';
-      cycleAnchorLabel.textContent = '星期幾重置 (1=一 ~ 7=日)';
-      eventForm.cycleAnchorDay.max = 7;
-      eventForm.cycleAnchorDay.placeholder = '例: 1';
-      cycleHint.textContent = type === 'weekly' ? '每週重置，將顯示本週剩餘天數' : '每兩週重置';
-    } else if (type === 'monthly') {
-      cycleAnchorWrap.style.display = '';
-      cycleAnchorLabel.textContent = '每月幾號重置';
-      eventForm.cycleAnchorDay.max = 31;
-      eventForm.cycleAnchorDay.placeholder = '例: 1';
-      cycleHint.textContent = '每月重置，將顯示本月剩餘天數';
-    }
-  }
-  eventForm?.cycleType?.addEventListener('change', updateCycleUI);
-
-  // ─── Merchant-match form UX ───
-  function updateMerchantKeywordsUI() {
-    merchantKeywordsWrap.classList.toggle('hidden', !requireMerchantMatchInput.checked);
-  }
-  requireMerchantMatchInput?.addEventListener('change', updateMerchantKeywordsUI);
-
-  // Adds any keywords not already present (case-insensitive) to the textarea,
-  // rather than overwriting it — so re-running the AI analysis (or running it
-  // after manually typing some keywords in) only ever appends.
-  function mergeMerchantKeywords(newKeywords) {
-    const existing = eventForm.merchantKeywords.value.split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
-    const seen = new Set(existing.map((s) => s.toUpperCase()));
-    for (const raw of newKeywords) {
-      const kw = String(raw || '').trim();
-      const norm = kw.toUpperCase();
-      if (norm && !seen.has(norm)) {
-        existing.push(kw);
-        seen.add(norm);
-      }
-    }
-    eventForm.merchantKeywords.value = existing.join('\n');
-  }
-
-  merchantAiBtn?.addEventListener('click', () => {
-    A.showError(merchantAiError, '');
-    merchantAiBox.classList.toggle('hidden');
-  });
-  merchantAiCancelBtn?.addEventListener('click', () => {
-    merchantAiBox.classList.add('hidden');
-    merchantAiInput.value = '';
-    A.showError(merchantAiError, '');
-  });
-  merchantAiAnalyzeBtn?.addEventListener('click', async () => {
-    const text = merchantAiInput.value.trim();
-    if (!text) { merchantAiInput.focus(); return; }
-    A.setLoading(merchantAiAnalyzeBtn, true);
-    A.showError(merchantAiError, '');
-    try {
-      const data = await A.jsonFetch(A.api('/ai/parse-merchants'), {
-        method: 'POST', body: { text, model: state.aiModel || undefined }
-      });
-      mergeMerchantKeywords(Array.isArray(data.keywords) ? data.keywords : []);
-      merchantAiBox.classList.add('hidden');
-      merchantAiInput.value = '';
-    } catch (err) {
-      A.showError(merchantAiError, err.message);
-    } finally {
-      A.setLoading(merchantAiAnalyzeBtn, false);
-    }
-  });
-
-  // ─── Merchant-exclusion form UX ───
-  function updateExcludeMerchantKeywordsUI() {
-    excludeMerchantKeywordsWrap.classList.toggle('hidden', !excludeMerchantMatchInput.checked);
-  }
-  excludeMerchantMatchInput?.addEventListener('change', updateExcludeMerchantKeywordsUI);
-
-  // Same append-only merge behaviour as mergeMerchantKeywords(), but for the
-  // exclusion list textarea.
-  function mergeExcludeMerchantKeywords(newKeywords) {
-    const existing = eventForm.excludeMerchantKeywords.value.split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
-    const seen = new Set(existing.map((s) => s.toUpperCase()));
-    for (const raw of newKeywords) {
-      const kw = String(raw || '').trim();
-      const norm = kw.toUpperCase();
-      if (norm && !seen.has(norm)) {
-        existing.push(kw);
-        seen.add(norm);
-      }
-    }
-    eventForm.excludeMerchantKeywords.value = existing.join('\n');
-  }
-
-  excludeMerchantAiBtn?.addEventListener('click', () => {
-    A.showError(excludeMerchantAiError, '');
-    excludeMerchantAiBox.classList.toggle('hidden');
-  });
-  excludeMerchantAiCancelBtn?.addEventListener('click', () => {
-    excludeMerchantAiBox.classList.add('hidden');
-    excludeMerchantAiInput.value = '';
-    A.showError(excludeMerchantAiError, '');
-  });
-  excludeMerchantAiAnalyzeBtn?.addEventListener('click', async () => {
-    const text = excludeMerchantAiInput.value.trim();
-    if (!text) { excludeMerchantAiInput.focus(); return; }
-    A.setLoading(excludeMerchantAiAnalyzeBtn, true);
-    A.showError(excludeMerchantAiError, '');
-    try {
-      const data = await A.jsonFetch(A.api('/ai/parse-merchants'), {
-        method: 'POST', body: { text, model: state.aiModel || undefined }
-      });
-      mergeExcludeMerchantKeywords(Array.isArray(data.keywords) ? data.keywords : []);
-      excludeMerchantAiBox.classList.add('hidden');
-      excludeMerchantAiInput.value = '';
-    } catch (err) {
-      A.showError(excludeMerchantAiError, err.message);
-    } finally {
-      A.setLoading(excludeMerchantAiAnalyzeBtn, false);
-    }
-  });
-
-  // ─── Loaders ───
-  async function loadTags() {
-    try {
-      const [cards, pms] = await Promise.all([
-        A.jsonFetch(A.api('/tags/cards')),
-        A.jsonFetch(A.api('/tags/payment-methods'))
-      ]);
-      state.cards = cards;
-      state.pms = pms;
-
-      cardFilter.innerHTML = '<option value="">全部</option>'
-        + cards.map((c) => `<option value="${c.id}">${c.name}</option>`).join('');
-      pmFilter.innerHTML = '<option value="">全部</option>'
-        + pms.map((p) => `<option value="${p.id}">${p.name}</option>`).join('');
-      if (raCardFilter) {
-        raCardFilter.innerHTML = '<option value="">全部</option>'
-          + cards.map((c) => `<option value="${c.id}">${c.name}</option>`).join('');
-      }
-      if (raPmFilter) {
-        raPmFilter.innerHTML = '<option value="">全部</option>'
-          + pms.map((p) => `<option value="${p.id}">${p.name}</option>`).join('');
-      }
-    } catch (err) {
-      console.error('loadTags', err);
-    }
-  }
-
-  // ─── Grouping / sorting ───
-  // 'deadline' keeps the server's own order (endDate asc, startDate asc, id
-  // desc); the others re-sort client-side since all matching events are
-  // already loaded in one page.
-  function sortEventsList(events, sortBy) {
-    const arr = events.slice();
-    if (sortBy === 'percentDesc' || sortBy === 'percentAsc') {
-      const asc = sortBy === 'percentAsc';
-      arr.sort((a, b) => {
-        const pa = a.cashbackPercent != null ? Number(a.cashbackPercent) : null;
-        const pb = b.cashbackPercent != null ? Number(b.cashbackPercent) : null;
-        if (pa == null && pb == null) return 0;
-        if (pa == null) return 1; // events without a percent (e.g. fixed-amount reward) sort last either way
-        if (pb == null) return -1;
-        return asc ? pa - pb : pb - pa;
-      });
-    } else if (sortBy === 'title') {
-      arr.sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), 'zh-Hant'));
-    }
+  // ─────────────────────────── List ───────────────────────────
+  function sortEvents(list) {
+    const arr = list.slice();
+    const rate = (e) => (e.cashbackPercent != null ? Number(e.cashbackPercent) : -1);
+    if (state.sort === 'remaining') arr.sort((a, b) => ((b.usage && b.usage.remainingReward) || 0) - ((a.usage && a.usage.remainingReward) || 0));
+    else if (state.sort === 'rate') arr.sort((a, b) => rate(b) - rate(a));
+    else if (state.sort === 'title') arr.sort((a, b) => String(a.title).localeCompare(String(b.title), 'zh-Hant'));
     return arr;
   }
 
-  // An event can belong to multiple groups at once (e.g. linked to 2 cards),
-  // in which case it's simply listed under each of its group headers.
-  function groupLabelsFor(groupBy, ev) {
-    if (groupBy === 'card') {
-      return (ev.cards && ev.cards.length) ? ev.cards.map((c) => c.name) : ['（未指定卡片）'];
-    }
-    if (groupBy === 'paymentMethod') {
-      return (ev.paymentMethods && ev.paymentMethods.length)
-        ? ev.paymentMethods.map((p) => p.name)
-        : ['（未使用電子支付 / 無指定）'];
-    }
-    return [null];
+  function timingBadge(ev) {
+    const t = ev.timing || {};
+    if (t.phase === 'upcoming') return `<span class="badge badge-brand">${t.daysUntilStart} 天後開始</span>`;
+    if (t.phase === 'ended') return '<span class="badge badge-slate">已結束</span>';
+    if (t.daysLeft != null && t.daysLeft <= 7) return `<span class="badge badge-rose">${esc(F.daysLeftText(t.daysLeft))}</span>`;
+    if (t.cycle && t.cycle.daysLeft != null && !t.cycle.endsWithEvent) return `<span class="badge badge-slate">本期剩 ${t.cycle.daysLeft} 天</span>`;
+    return `<span class="badge badge-slate">${esc(F.daysLeftText(t.daysLeft))}</span>`;
   }
 
-  function renderEventsList(events) {
-    listEl.innerHTML = '';
-    if (!events.length) {
-      listEl.innerHTML = `<div class="text-sm text-slate-400 col-span-full">沒有符合條件的活動</div>`;
+  function usageBlock(ev, compact) {
+    const u = ev.usage;
+    if (!u) return '<div class="mt-3 text-[13px] muted">尚未綁定卡片，無法自動計算</div>';
+    const rt = ev.rewardType;
+    let html = '';
+    if (u.cap != null) {
+      const right = u.capReached
+        ? '<span class="font-semibold text-emerald-600 dark:text-emerald-400">已滿額</span>'
+        : (u.remainingCapAmount > 0 ? `<span class="muted">再刷 ${F.money(u.remainingCapAmount, { decimals: 0 })}</span>` : '');
+      html = `<div class="mt-3">${A.progressBar(u.capUsedPercent)}
+        <div class="mt-1.5 flex items-center justify-between gap-2 text-[13px]"><span>回饋 <b class="money">${F.reward(u.estimatedReward, rt)}</b> / ${F.reward(u.cap, rt)}</span>${right}</div></div>`;
+    } else {
+      html = `<div class="mt-3 flex items-center justify-between text-[13px]"><span class="muted">已刷 ${F.money(u.usedAmount, { decimals: 0 })}・${u.txnCount} 筆</span><span>回饋 <b class="money">${F.reward(u.estimatedReward, rt)}</b></span></div>`;
+    }
+    if (u.thresholdMet === false) html += `<div class="mt-1 text-[12px] text-amber-600 dark:text-amber-400">本期再刷 ${F.money(u.remainingToThreshold, { decimals: 0 })} 才有回饋</div>`;
+    if (!compact && u.cap != null) html += `<div class="mt-0.5 text-[12px] muted">已刷 ${F.money(u.usedAmount, { decimals: 0 })}・${u.txnCount} 筆</div>`;
+    return html;
+  }
+
+  function eventCard(ev) {
+    const tags = (ev.cards || []).map((c) => A.payTag(c)).concat((ev.paymentMethods || []).map((p) => A.payTag(p))).join('');
+    return `<article class="card card-pad card-link cursor-pointer" data-open-event="${ev.id}" tabindex="0">
+      <div class="flex items-start gap-3">
+        <div class="min-w-0 flex-1">
+          <h3 class="line-clamp-2 text-[15px] font-semibold leading-snug">${esc(ev.title)}</h3>
+          <div class="mt-1.5 flex flex-wrap gap-1.5">${tags || '<span class="text-xs faint">未綁定卡片</span>'}</div>
+        </div>
+        <div class="shrink-0 text-right">
+          <div class="text-lg font-bold text-brand-600 dark:text-brand-400">${esc(A.rewardRateText(ev))}</div>
+          <div class="mt-0.5">${timingBadge(ev)}</div>
+        </div>
+      </div>
+      ${ev.needsRegistration ? `<div class="mt-2 flex items-center justify-between gap-2 rounded-xl bg-rose-50 px-3 py-2 text-[13px] text-rose-700 dark:bg-rose-500/10 dark:text-rose-300"><span class="flex items-center gap-1.5">${icon('alert', 'i-sm')}需要登錄，還沒登錄</span><button type="button" class="btn btn-xs bg-white text-rose-700 dark:bg-rose-500/20 dark:text-rose-200" data-reg="${ev.id}">已登錄</button></div>` : ''}
+      ${usageBlock(ev, true)}
+    </article>`;
+  }
+
+  function renderList() {
+    const box = $('eventsList');
+    if (!state.events.length) {
+      const msg = state.q || state.cardId || state.pmId ? '找不到符合條件的活動' : '這裡還沒有活動';
+      box.innerHTML = `<div class="card md:col-span-2">${A.emptyState('gift', msg, state.q ? '換個關鍵字試試' : '用右上角「＋」或 AI 解析新增', `<button class="btn btn-primary btn-sm" data-new-event>${icon('plus', 'i-sm')}新增活動</button>`)}</div>`;
       return;
     }
-
-    const sorted = sortEventsList(events, state.sortBy);
-
-    if (state.groupBy === 'none') {
-      for (const ev of sorted) listEl.appendChild(eventCardEl(ev));
-      return;
-    }
-
+    const sorted = sortEvents(state.events);
+    if (state.group === 'none') { box.innerHTML = sorted.map(eventCard).join(''); return; }
     const groups = new Map();
     for (const ev of sorted) {
-      for (const label of groupLabelsFor(state.groupBy, ev)) {
-        if (!groups.has(label)) groups.set(label, []);
-        groups.get(label).push(ev);
-      }
+      const labels = state.group === 'card'
+        ? ((ev.cards || []).length ? ev.cards.map((c) => c.name) : ['未綁定卡片'])
+        : ((ev.paymentMethods || []).length ? ev.paymentMethods.map((p) => p.name) : ['直接刷卡']);
+      labels.forEach((l) => { if (!groups.has(l)) groups.set(l, []); groups.get(l).push(ev); });
     }
-    const labels = Array.from(groups.keys()).sort((a, b) => String(a).localeCompare(String(b), 'zh-Hant'));
-    const icon = state.groupBy === 'card' ? '💳' : '💸';
-    for (const label of labels) {
-      const header = document.createElement('div');
-      header.className = 'col-span-full text-xs font-semibold text-slate-500 uppercase tracking-wide mt-3 mb-1 first:mt-0 flex items-center gap-1.5';
-      header.innerHTML = `<span>${icon} ${escapeHtml(label)}</span><span class="text-slate-300 font-normal normal-case">(${groups.get(label).length})</span>`;
-      listEl.appendChild(header);
-      for (const ev of groups.get(label)) listEl.appendChild(eventCardEl(ev));
-    }
+    box.innerHTML = Array.from(groups.keys()).sort((a, b) => a.localeCompare(b, 'zh-Hant')).map((l) => `
+      <h3 class="section-title !mt-3 md:col-span-2"><span>${esc(l)}</span><span class="badge badge-slate">${groups.get(l).length}</span></h3>
+      ${groups.get(l).map(eventCard).join('')}`).join('');
   }
 
   async function loadEvents() {
-    listEl.innerHTML = `<div class="text-sm text-slate-400 col-span-full">載入中…</div>`;
-    const params = new URLSearchParams();
-    params.set('status', state.status);
-    if (state.q) params.set('q', state.q);
-    if (state.cardId) params.set('cardId', state.cardId);
-    if (state.pmId) params.set('paymentMethodId', state.pmId);
+    const seq = ++state.seq;
+    const qs = new URLSearchParams({ status: state.status });
+    if (state.q) qs.set('q', state.q);
+    if (state.cardId) qs.set('cardId', state.cardId);
+    if (state.pmId) qs.set('paymentMethodId', state.pmId);
+    if (!state.events.length) $('eventsList').innerHTML = A.skeletonRows(3, 'h-32');
     try {
-      listEl.innerHTML = '<div class="text-sm text-slate-400 col-span-full py-6 flex items-center justify-center gap-2"><svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> 載入中…</div>';
-      const events = await A.jsonFetch(A.api('/cashback?' + params.toString()));
-      state.events = events;
-      renderEventsList(events);
+      const list = await A.get('/cashback?' + qs);
+      if (seq !== state.seq) return;
+      state.events = list;
+      renderList();
     } catch (err) {
-      listEl.innerHTML = `<div class="text-sm text-rose-500 col-span-full">載入失敗：${err.message}</div>`;
+      if (seq !== state.seq) return;
+      $('eventsList').innerHTML = `<div class="card md:col-span-2">${A.errorState(err, 'retryEvents')}</div>`;
+      const r = $('retryEvents');
+      if (r) r.onclick = loadEvents;
     }
   }
 
-  // ─── AI model picker ───
-  function shortModelLabel(m) {
-    // Strip the leading "Gemini" Google uses in displayName to keep options compact.
-    const label = (m.displayName || m.name || '').replace(/^Gemini\s*/i, '').trim() || m.name;
-    return 'Gemini ' + label;
-  }
-
-  function paintModelSelect(selectEl) {
-    if (!selectEl) return;
-    if (!state.aiModels.length) {
-      selectEl.innerHTML = '<option value="">（無法載入模型）</option>';
-      return;
-    }
-    selectEl.innerHTML = state.aiModels.map((m) => {
-      const sel = m.name === state.aiModel ? ' selected' : '';
-      const desc = m.description ? ` title="${escapeHtml(m.description)}"` : '';
-      return `<option value="${escapeHtml(m.name)}"${sel}${desc}>${escapeHtml(shortModelLabel(m))}</option>`;
-    }).join('');
-  }
-
-  function setAiModel(name) {
-    state.aiModel = name || '';
-    if (state.aiModel) localStorage.setItem(AI_MODEL_STORAGE_KEY, state.aiModel);
-    else localStorage.removeItem(AI_MODEL_STORAGE_KEY);
-    if (aiModelSelect && aiModelSelect.value !== state.aiModel) aiModelSelect.value = state.aiModel;
-    if (aiParseModelSelect && aiParseModelSelect.value !== state.aiModel) aiParseModelSelect.value = state.aiModel;
-  }
-
-  async function loadAiModels() {
-    try {
-      const data = await A.jsonFetch(A.api('/ai/models'));
-      state.aiModels = Array.isArray(data && data.models) ? data.models : [];
-      // Resolve selected model: stored choice if still available, else server default.
-      const stored = state.aiModel;
-      const has = (n) => state.aiModels.some((m) => m.name === n);
-      if (!stored || !has(stored)) {
-        state.aiModel = has(data.default) ? data.default : (state.aiModels[0] && state.aiModels[0].name) || '';
-        if (state.aiModel) localStorage.setItem(AI_MODEL_STORAGE_KEY, state.aiModel);
-      }
-      paintModelSelect(aiModelSelect);
-      paintModelSelect(aiParseModelSelect);
-    } catch (err) {
-      state.aiModels = [];
-      paintModelSelect(aiModelSelect);
-      paintModelSelect(aiParseModelSelect);
-    }
-  }
-
-  aiModelSelect?.addEventListener('change', () => setAiModel(aiModelSelect.value));
-  aiParseModelSelect?.addEventListener('change', () => setAiModel(aiParseModelSelect.value));
-
-  // ─── AI key management ───
-  function aiKeyRowEl(k) {
-    const li = document.createElement('li');
-    li.className = 'flex items-center gap-3 rounded-xl border border-slate-200 p-3'
-      + (k.isActive ? ' bg-brand-50 border-brand-200' : '');
-    li.dataset.id = k.id;
-    li.innerHTML = `
-      <input type="radio" name="aiActiveKey" class="text-brand-600" ${k.isActive ? 'checked' : ''} data-action="activate" />
-      <div class="min-w-0 flex-1">
-        <div class="font-medium text-sm truncate" data-field="name">${escapeHtml(k.name)}</div>
-        <div class="text-[11px] text-slate-500 font-mono">${escapeHtml(k.keyMask)}</div>
-      </div>
-      <button type="button" data-action="rename" class="text-xs text-slate-500 hover:text-slate-700">重新命名</button>
-      <button type="button" data-action="delete" class="text-xs text-rose-600 hover:text-rose-700">刪除</button>
-    `;
-    return li;
-  }
-
-  function renderAiKeys(keys) {
-    aiKeysList.innerHTML = '';
-    if (!keys.length) {
-      aiKeysEmpty.classList.remove('hidden');
-      return;
-    }
-    aiKeysEmpty.classList.add('hidden');
-    keys.forEach((k) => aiKeysList.appendChild(aiKeyRowEl(k)));
-  }
-
-  async function loadAiKeys() {
-    A.showError(aiKeysError, '');
-    try {
-      const keys = await A.jsonFetch(A.api('/ai/keys'));
-      renderAiKeys(keys);
-    } catch (err) {
-      A.showError(aiKeysError, '載入失敗：' + err.message);
-    }
-  }
-
-  aiKeysBtn?.addEventListener('click', () => {
-    A.showError(aiKeyAddError, '');
-    aiKeyAddForm.reset();
-    aiKeyAddForm.makeActive.checked = true;
-    loadAiKeys();
-    A.openModal('aiKeysModal');
-  });
-
-  aiKeysList?.addEventListener('click', async (e) => {
-    const action = e.target.closest('[data-action]')?.dataset.action;
-    if (!action) return;
-    const li = e.target.closest('li[data-id]');
-    if (!li) return;
-    const id = li.dataset.id;
-    A.showError(aiKeysError, '');
-    try {
-      if (action === 'activate') {
-        await A.jsonFetch(A.api(`/ai/keys/${id}`), { method: 'PUT', body: { isActive: true } });
-        await loadAiKeys();
-        loadAiModels();
-      } else if (action === 'rename') {
-        const current = li.querySelector('[data-field="name"]').textContent;
-        const name = prompt('重新命名金鑰', current);
-        if (!name || !name.trim() || name.trim() === current) return;
-        await A.jsonFetch(A.api(`/ai/keys/${id}`), { method: 'PUT', body: { name: name.trim() } });
-        await loadAiKeys();
-      } else if (action === 'delete') {
-        if (!confirm('確定刪除這把金鑰？此操作無法復原。')) return;
-        await A.jsonFetch(A.api(`/ai/keys/${id}`), { method: 'DELETE' });
-        await loadAiKeys();
-        loadAiModels();
-      }
-    } catch (err) {
-      A.showError(aiKeysError, err.message);
-    }
-  });
-
-  aiKeyAddForm?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const submitBtn = aiKeyAddForm.querySelector('button[type=submit]');
-    A.setLoading(submitBtn, true);
-    A.showError(aiKeyAddError, '');
-    try {
-      await A.jsonFetch(A.api('/ai/keys'), {
-        method: 'POST',
-        body: {
-          name: aiKeyAddForm.name.value,
-          key: aiKeyAddForm.key.value,
-          makeActive: !!aiKeyAddForm.makeActive.checked
-        }
-      });
-      aiKeyAddForm.reset();
-      aiKeyAddForm.makeActive.checked = true;
-      await loadAiKeys();
-      loadAiModels();
-    } catch (err) {
-      A.showError(aiKeyAddError, err.message);
-    } finally {
-      A.setLoading(submitBtn, false);
-    }
-  });
-
-  // ─── AI search ───
-  const RANK_LABEL = { 1: '最佳推薦', 2: '次選方案', 3: '備選方案' };
-
-  function aiRecCardEl(rec, rank, refMap) {
-    const card = document.createElement('div');
-    const isTop = rank === 1;
-    card.className = 'col-span-full bg-white rounded-2xl shadow-sm p-5 sm:p-6 '
-      + (isTop ? 'border border-brand-200 ring-1 ring-brand-100' : 'border border-slate-200');
-
-    const cautions = (rec.cautions || []).map((c) =>
-      `<li class="flex gap-2"><span class="text-amber-500 flex-shrink-0 mt-px">•</span><span class="leading-relaxed">${escapeHtml(c)}</span></li>`
-    ).join('');
-
-    const refs = (rec.eventIds || []).map((id) => refMap.get(id)).filter(Boolean);
-    const refHtml = refs.map((r) => r.sourceUrl
-      ? `<a href="${escapeHtml(r.sourceUrl)}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700 hover:underline">🔗 ${escapeHtml(r.title)}</a>`
-      : `<span class="inline-flex items-center gap-1 text-xs text-slate-500">📋 ${escapeHtml(r.title)}</span>`
-    ).join('');
-
-    const checkBtn = rec.checkUrl
-      ? `<a href="${escapeHtml(rec.checkUrl)}" target="_blank" rel="noopener" class="mt-4 inline-flex items-center justify-center gap-1.5 px-4 py-2 text-sm font-medium rounded-xl bg-brand-600 text-white hover:bg-brand-700 transition">前往查看 ‧ 確認名額 <span aria-hidden="true">→</span></a>`
-      : '';
-
-    card.innerHTML = `
-      <div class="flex items-start gap-4">
-        <div class="flex-shrink-0 w-11 h-11 rounded-full grid place-items-center text-lg font-bold ${isTop ? 'bg-brand-600 text-white' : 'bg-brand-50 text-brand-700 border border-brand-100'}">${rank}</div>
-        <div class="min-w-0 flex-1">
-          <div class="text-[11px] font-medium tracking-widest text-slate-400 uppercase">${RANK_LABEL[rank] || ('推薦 ' + rank)}</div>
-          <h3 class="text-lg font-semibold text-slate-800 mt-0.5 leading-snug break-words">${escapeHtml(rec.title)}</h3>
-          ${rec.rewardText ? `<div class="mt-2"><span class="inline-flex items-center px-3 py-1 rounded-full bg-brand-50 text-brand-700 text-sm font-semibold border border-brand-100">${escapeHtml(rec.rewardText)}</span></div>` : ''}
-        </div>
-      </div>
-
-      ${rec.reason ? `<p class="text-sm text-slate-600 leading-relaxed mt-4 whitespace-pre-wrap">${escapeHtml(rec.reason)}</p>` : ''}
-
-      ${cautions ? `
-      <div class="mt-4 rounded-xl bg-amber-50 border border-amber-100 p-3.5">
-        <div class="flex items-center gap-1.5 text-xs font-semibold text-amber-700 mb-1.5">
-          <span aria-hidden="true">⚠️</span><span>注意事項</span>
-        </div>
-        <ul class="space-y-1 text-xs text-amber-800">${cautions}</ul>
-      </div>` : ''}
-
-      ${refHtml ? `
-      <div class="mt-4 pt-3 border-t border-slate-100">
-        <div class="text-[11px] text-slate-400 mb-1.5">相關活動</div>
-        <div class="flex flex-wrap gap-x-4 gap-y-1.5">${refHtml}</div>
-      </div>` : ''}
-
-      ${checkBtn}`;
-    return card;
-  }
-
-  function renderAiResults(data) {
-    listEl.innerHTML = '';
-    const recs = data.recommendations || [];
-
-    const top = document.createElement('div');
-    top.className = 'col-span-full';
-    const cachedTag = data.cached
-      ? '<span class="ml-1.5 text-[10px] font-normal text-slate-400">· 快取</span>' : '';
-    top.innerHTML = `
-      <div class="rounded-2xl bg-gradient-to-br from-brand-50 to-white border border-brand-100 px-4 py-3.5">
-        <div class="flex items-center gap-1.5 text-[11px] font-semibold tracking-widest text-brand-600 uppercase">
-          <span aria-hidden="true">✨</span><span>AI 智能分析</span>${cachedTag}
-        </div>
-        <p class="text-sm text-slate-700 leading-relaxed mt-1">${escapeHtml(data.summary || '')}</p>
-      </div>`;
-    listEl.appendChild(top);
-
-    if (!recs.length) {
-      const empty = document.createElement('div');
-      empty.className = 'col-span-full text-center text-sm text-slate-400 py-8';
-      empty.textContent = '找不到相關的回饋方案，試試其他關鍵字，或先新增更多活動。';
-      listEl.appendChild(empty);
-      return;
-    }
-
-    const refMap = new Map((data.refs || []).map((r) => [r.id, r]));
-    recs.forEach((rec, i) => listEl.appendChild(aiRecCardEl(rec, i + 1, refMap)));
-  }
-
-  async function runAiSearch() {
-    const query = aiSearchInput.value.trim();
-    if (!query) { aiSearchInput.focus(); return; }
-    A.setLoading(aiSearchBtn, true);
-    listEl.innerHTML = `<div class="text-sm text-slate-400 col-span-full py-6 flex items-center justify-center gap-2">${SPINNER_SVG} AI 分析中…</div>`;
-    try {
-      const data = await A.jsonFetch(A.api('/ai/search-rewards'), {
-        method: 'POST',
-        body: {
-          query,
-          web: !!(aiWebToggle && aiWebToggle.checked),
-          model: state.aiModel || undefined
-        }
-      });
-      renderAiResults(data);
-    } catch (err) {
-      let msg = err.message;
-      if (err.body && err.body.error === 'GEMINI_NOT_CONFIGURED') {
-        msg = '尚未設定 AI 金鑰（GEMINI_API_KEY），無法使用 AI 搜尋。';
-      }
-      listEl.innerHTML = `<div class="text-sm text-rose-500 col-span-full">AI 搜尋失敗：${escapeHtml(msg)}</div>`;
-    } finally {
-      A.setLoading(aiSearchBtn, false);
-    }
-  }
-
-  // ─── Rewards audit ───
-  function raWindowLabel(u) {
-    if (!u.cycleStart && !u.cycleEnd) return '不限期間';
-    const start = u.cycleStart ? A.fmtDateOnly(u.cycleStart) : '—';
-    const end = u.cycleEnd ? A.fmtDateOnly(u.cycleEnd) : '—';
-    return `${start} ~ ${end}`;
-  }
-
-  function rewardAuditCardEl(ev) {
-    const card = document.createElement('div');
-    card.className = 'card p-3';
-    const u = ev.usage;
-
-    const cardChips = (ev.cards || []).map((c) => {
-      const net = c.network ? ` · ${NETWORK_LABELS[c.network] || ''}` : '';
-      if (c.imageUrl) {
-        return `<span class="credit-card-mini"><img class="credit-card-mini__img" src="${A.url(c.imageUrl)}" alt="" />${c.name}${net}</span>`;
-      }
-      return `<span class="credit-card-mini">💳 ${c.name}${net}</span>`;
-    }).join('');
-    const pmChips = (ev.paymentMethods || []).map((p) => {
-      if (p.imageUrl) {
-        return `<span class="pm-badge"><img class="pm-badge__img" src="${A.url(p.imageUrl)}" alt="" />${p.name}</span>`;
-      }
-      return `<span class="pm-badge">💸 ${p.name}</span>`;
-    }).join('');
-
-    const calcLabel = u.rewardCalcMode === 'perTransaction' ? '逐筆計算' : '整筆計算';
-    const hasTxns = (u.transactions && u.transactions.length) || (u.txnRewards && u.txnRewards.length);
-
-    card.innerHTML = `
-      <div class="flex items-start justify-between gap-3">
-        <div class="min-w-0 flex-1">
-          <div class="font-medium truncate" title="${escapeHtml(ev.title)}">${escapeHtml(ev.title)}</div>
-          <div class="text-[11px] text-slate-400 mt-0.5">計算區間：${raWindowLabel(u)}</div>
-        </div>
-        <div class="text-right flex-shrink-0">
-          <div class="text-[11px] text-slate-400">消費 NT$${A.fmtNumber(u.usedAmount)}（${u.txnCount} 筆）</div>
-        </div>
-      </div>
-      <div class="mt-2 flex flex-wrap gap-1">${cardChips}${pmChips}</div>
-      <div class="mt-2.5 pt-2.5 border-t border-slate-100 flex items-center justify-between gap-2">
-        <div>
-          <div class="text-[11px] text-slate-400">💰 應得回饋（${roundingLabel(u)}・${calcLabel}）</div>
-          <div class="text-xl font-semibold text-brand-700">NT$${A.fmtNumber(u.estimatedReward)}</div>
-        </div>
-        ${hasTxns ? `<button type="button" class="js-reward-detail-btn text-xs text-brand-600 hover:underline border border-brand-200 rounded-lg px-2.5 py-1.5" data-event-id="${ev.id}">查看明細</button>` : ''}
-      </div>
-      ${u.cap != null ? `<div class="mt-1.5 text-[11px] text-slate-400">回饋上限 NT$${A.fmtNumber(u.cap)}${u.capReached ? ' · <span class="text-rose-500 font-medium">已達上限</span>' : ''}</div>` : ''}
-    `;
-    return card;
-  }
-
-  function raPresetRange(preset) {
-    const now = new Date();
-    if (preset === 'thisMonth') {
-      const start = new Date(now.getFullYear(), now.getMonth(), 1);
-      const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-      return { from: start.toISOString(), to: end.toISOString() };
-    }
-    if (preset === 'lastMonth') {
-      const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const end = new Date(now.getFullYear(), now.getMonth(), 1);
-      return { from: start.toISOString(), to: end.toISOString() };
-    }
-    return null;
-  }
-
-  async function loadRewardsAudit() {
-    listEl.innerHTML = `<div class="text-sm text-slate-400 col-span-full py-6 flex items-center justify-center gap-2">${SPINNER_SVG} 計算中…</div>`;
-    const params = new URLSearchParams();
-    params.set('status', state.ra.status);
-    if (state.ra.cardId) params.set('cardId', state.ra.cardId);
-    if (state.ra.pmId) params.set('paymentMethodId', state.ra.pmId);
-    if (state.ra.q) params.set('q', state.ra.q);
-
-    if (state.ra.range === 'prevCycle') {
-      // Each event's own previously-closed cycle — computed per-event on the server.
-      params.set('range', 'prevCycle');
-    } else if (state.ra.range === 'thisMonth' || state.ra.range === 'lastMonth') {
-      const r = raPresetRange(state.ra.range);
-      params.set('range', 'range');
-      params.set('from', r.from);
-      params.set('to', r.to);
-    } else if (state.ra.range === 'custom') {
-      if (!raFromInput.value || !raToInput.value) {
-        listEl.innerHTML = '<div class="text-sm text-slate-400 col-span-full">請選擇自訂區間的起訖日期</div>';
-        return;
-      }
-      params.set('range', 'range');
-      params.set('from', new Date(`${raFromInput.value}T00:00:00`).toISOString());
-      // "迄" is inclusive of that whole day, so push the boundary to the next day (window end is exclusive).
-      const toDate = new Date(`${raToInput.value}T00:00:00`);
-      toDate.setDate(toDate.getDate() + 1);
-      params.set('to', toDate.toISOString());
-    }
-    // range === 'cycle' -> omit range/from/to entirely, server defaults to each event's own cycle
-
-    try {
-      const data = await A.jsonFetch(A.api('/cashback/rewards-audit?' + params.toString()));
-      state.ra.events = data.events || [];
-      listEl.innerHTML = '';
-      if (!state.ra.events.length) {
-        const emptyMsg = state.ra.range === 'prevCycle'
-          ? '沒有已結算的上一個區間可顯示（僅適用有週期、且已完成至少一個區間的活動）'
-          : '沒有符合條件的活動';
-        listEl.innerHTML = `<div class="text-sm text-slate-400 col-span-full">${emptyMsg}</div>`;
-        return;
-      }
-      for (const ev of state.ra.events) listEl.appendChild(rewardAuditCardEl(ev));
-    } catch (err) {
-      listEl.innerHTML = `<div class="text-sm text-rose-500 col-span-full">計算失敗：${escapeHtml(err.message)}</div>`;
-    }
-  }
-
-  raCardFilter?.addEventListener('change', () => { state.ra.cardId = raCardFilter.value; loadRewardsAudit(); });
-  raPmFilter?.addEventListener('change', () => { state.ra.pmId = raPmFilter.value; loadRewardsAudit(); });
-  raQInput?.addEventListener('input', debounce(() => { state.ra.q = raQInput.value.trim(); loadRewardsAudit(); }, 300));
-  raStatusChips.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      raStatusChips.forEach((b) => b.classList.remove('bg-brand-600', 'text-white'));
-      raStatusChips.forEach((b) => b.classList.add('border', 'border-slate-300', 'text-slate-600'));
-      btn.classList.remove('border', 'border-slate-300', 'text-slate-600');
-      btn.classList.add('bg-brand-600', 'text-white');
-      state.ra.status = btn.dataset.raStatus;
-      loadRewardsAudit();
-    });
-  });
-  raRangeChips.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      raRangeChips.forEach((b) => b.classList.remove('bg-brand-600', 'text-white'));
-      raRangeChips.forEach((b) => b.classList.add('border', 'border-slate-300', 'text-slate-600'));
-      btn.classList.remove('border', 'border-slate-300', 'text-slate-600');
-      btn.classList.add('bg-brand-600', 'text-white');
-      state.ra.range = btn.dataset.raRange;
-      raCustomRangeWrap.classList.toggle('hidden', state.ra.range !== 'custom');
-      if (state.ra.range !== 'custom' || (raFromInput.value && raToInput.value)) loadRewardsAudit();
-    });
-  });
-  raFromInput?.addEventListener('change', () => { if (state.ra.range === 'custom') loadRewardsAudit(); });
-  raToInput?.addEventListener('change', () => { if (state.ra.range === 'custom') loadRewardsAudit(); });
-
-  modeChips.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const mode = btn.dataset.mode;
-      if (mode === state.mode) return;
-      state.mode = mode;
-      modeChips.forEach((b) => {
-        const on = b.dataset.mode === mode;
-        b.classList.toggle('bg-brand-600', on);
-        b.classList.toggle('text-white', on);
-        b.classList.toggle('border', !on);
-        b.classList.toggle('border-slate-300', !on);
-        b.classList.toggle('text-slate-600', !on);
-      });
-      normalFilters.classList.add('hidden');
-      aiSearchWrap.classList.add('hidden');
-      rewardsAuditWrap.classList.add('hidden');
-
-      if (mode === 'ai') {
-        aiSearchWrap.classList.remove('hidden');
-        listEl.innerHTML = '<div class="text-sm text-slate-400 col-span-full">輸入消費場景或商家，讓 AI 推薦回饋最高的方案。</div>';
-        aiSearchInput.focus();
-      } else if (mode === 'rewards') {
-        rewardsAuditWrap.classList.remove('hidden');
-        loadRewardsAudit();
-      } else {
-        normalFilters.classList.remove('hidden');
-        loadEvents();
-      }
-    });
-  });
-
-  aiSearchBtn?.addEventListener('click', runAiSearch);
-  aiSearchInput?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); runAiSearch(); }
-  });
-
-  // ─── Filter wiring ───
-  qInput.addEventListener('input', debounce(() => {
-    state.q = qInput.value.trim();
+  $('qInput').addEventListener('input', A.debounce(() => { state.q = $('qInput').value.trim(); loadEvents(); }, 300));
+  $('statusChips').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-status]');
+    if (!b) return;
+    state.status = b.dataset.status;
+    A.store.set('cb.status', state.status);
+    A.setPressed($('statusChips'), '[data-status]', state.status, 'status');
+    state.events = [];
     loadEvents();
-  }, 300));
-  cardFilter.addEventListener('change', () => { state.cardId = cardFilter.value; loadEvents(); });
-  pmFilter.addEventListener('change', () => { state.pmId = pmFilter.value; loadEvents(); });
-  statusChips.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      statusChips.forEach((b) => b.classList.remove('bg-brand-600', 'text-white'));
-      statusChips.forEach((b) => b.classList.add('border', 'border-slate-300', 'text-slate-600'));
-      btn.classList.remove('border', 'border-slate-300', 'text-slate-600');
-      btn.classList.add('bg-brand-600', 'text-white');
-      state.status = btn.dataset.status;
-      loadEvents();
-    });
   });
 
-  if (groupBySelect) groupBySelect.value = state.groupBy;
-  if (sortBySelect) sortBySelect.value = state.sortBy;
-  groupBySelect?.addEventListener('change', () => {
-    state.groupBy = groupBySelect.value;
-    localStorage.setItem(GROUP_BY_STORAGE_KEY, state.groupBy);
-    renderEventsList(state.events);
+  // Filter sheet
+  function syncFilterDot() { $('filterDot').hidden = !(state.cardId || state.pmId || state.sort !== 'deadline' || state.group !== 'none'); }
+  $('filterBtn').addEventListener('click', () => A.sheet.open('filterSheet'));
+  $('fCard').addEventListener('change', (e) => { state.cardId = e.target.value; syncFilterDot(); loadEvents(); });
+  $('fPm').addEventListener('change', (e) => { state.pmId = e.target.value; syncFilterDot(); loadEvents(); });
+  $('fSort').addEventListener('change', (e) => { state.sort = e.target.value; A.store.set('cb.sort', state.sort); syncFilterDot(); renderList(); });
+  $('fGroup').addEventListener('change', (e) => { state.group = e.target.value; A.store.set('cb.group', state.group); syncFilterDot(); renderList(); });
+  $('fReset').addEventListener('click', () => {
+    Object.assign(state, { cardId: '', pmId: '', sort: 'deadline', group: 'none' });
+    $('fCard').value = ''; $('fPm').value = ''; $('fSort').value = 'deadline'; $('fGroup').value = 'none';
+    A.store.set('cb.sort', 'deadline'); A.store.set('cb.group', 'none');
+    syncFilterDot();
+    loadEvents();
   });
-  sortBySelect?.addEventListener('change', () => {
-    state.sortBy = sortBySelect.value;
-    localStorage.setItem(SORT_BY_STORAGE_KEY, state.sortBy);
-    renderEventsList(state.events);
-  });
 
-  // ─── Event modal ───
-  function openEventModal(ev) {
-    eventForm.reset();
-    A.showError(eventFormError, '');
-    state.selectedCardIds = new Set();
-    state.selectedPmIds = new Set();
-
-    if (ev) {
-      eventModalTitle.textContent = '編輯回饋活動';
-      eventForm.id.value = ev.id;
-      eventForm.title.value = ev.title || '';
-      eventForm.startDate.value = ev.startDate || '';
-      eventForm.endDate.value = ev.endDate || '';
-      eventForm.cycleType.value = ev.cycleType || 'none';
-      eventForm.cycleAnchorDay.value = ev.cycleAnchorDay ?? '';
-      eventForm.cashbackPercent.value = ev.cashbackPercent ?? '';
-      eventForm.cashbackFixed.value = ev.cashbackFixed ?? '';
-      eventForm.rewardType.value = ev.rewardType || 'cash';
-      eventForm.maxReward.value = ev.maxReward ?? '';
-      eventForm.minimumSpend.value = ev.minimumSpend ?? '';
-      eventForm.rewardRounding.value = ev.rewardRounding === 'floor' ? 'floor' : 'round';
-      eventForm.rewardCalcMode.value = ev.rewardCalcMode === 'perTransaction' ? 'perTransaction' : 'aggregate';
-      eventForm.rewardPrecision.value = ev.rewardPrecision ?? 0;
-      eventForm.sourceUrl.value = ev.sourceUrl || '';
-      eventForm.description.value = ev.description || '';
-      eventForm.matchUnspecifiedPayment.checked = !!ev.matchUnspecifiedPayment;
-      eventForm.requireMerchantMatch.checked = !!ev.requireMerchantMatch;
-      eventForm.merchantKeywords.value = ev.merchantKeywords || '';
-      eventForm.excludeMerchantMatch.checked = !!ev.excludeMerchantMatch;
-      eventForm.excludeMerchantKeywords.value = ev.excludeMerchantKeywords || '';
-      (ev.cards || []).forEach((c) => state.selectedCardIds.add(c.id));
-      (ev.paymentMethods || []).forEach((p) => state.selectedPmIds.add(p.id));
-      deleteEventBtn.classList.remove('hidden');
-    } else {
-      eventModalTitle.textContent = '新增回饋活動';
-      eventForm.id.value = '';
-      deleteEventBtn.classList.add('hidden');
-    }
-
-    updateCycleUI();
-    updateMerchantKeywordsUI();
-    updateExcludeMerchantKeywordsUI();
-
-    cardChipsBox.innerHTML = '';
-    pmChipsBox.innerHTML = '';
-    if (!state.cards.length) {
-      cardChipsBox.innerHTML = `<span class="text-xs text-slate-400">尚無卡片，<a class="underline text-brand-600" href="${A.url('/tags')}">前往新增</a></span>`;
-    }
-    if (!state.pms.length) {
-      pmChipsBox.innerHTML = `<span class="text-xs text-slate-400">尚無支付方式，<a class="underline text-brand-600" href="${A.url('/tags')}">前往新增</a></span>`;
-    }
-    state.cards.forEach((c) => chipButton(cardChipsBox, c, state.selectedCardIds));
-    state.pms.forEach((p) => chipButton(pmChipsBox, p, state.selectedPmIds));
-
-    A.openModal('eventModal');
+  // ─────────────────────────── Detail ───────────────────────────
+  function findEvent(id) {
+    id = Number(id);
+    return state.events.find((e) => e.id === id) || (state.audit && state.audit.events.find((e) => e.id === id));
   }
 
-  newEventBtn?.addEventListener('click', () => openEventModal(null));
+  function conditionRows(ev) {
+    const rows = [];
+    const t = ev.timing || {};
+    rows.push(['活動期間', `${ev.startDate ? F.date(ev.startDate, { year: true }) : '不限'} ～ ${ev.endDate ? F.date(ev.endDate, { year: true }) : '不限'}`]);
+    let cycle = CYCLE_TEXT[ev.cycleType] || '整個活動期間';
+    if (ev.cycleType === 'monthly') cycle += ` ${ev.cycleAnchorDay || 1} 號重置`;
+    if (ev.cycleType === 'weekly' || ev.cycleType === 'biweekly') cycle += `${WEEKDAY[ev.cycleAnchorDay || 1]}重置`;
+    if (t.cycle) cycle += `<br><span class="muted">本期 ${F.date(t.cycle.start)}～${F.date(t.cycle.end)}</span>`;
+    rows.push(['計算週期', cycle]);
+    rows.push(['回饋', `${esc(A.rewardRateText(ev))}${ev.rewardType && ev.rewardType !== 'cash' ? `（${{ point: '點數', coupon: '折價券', other: '其他' }[ev.rewardType]}）` : ''}`]);
+    rows.push(['每期上限', ev.maxReward != null ? F.reward(ev.maxReward, ev.rewardType) : '不限']);
+    if (ev.minimumSpend != null && Number(ev.minimumSpend) > 0) {
+      rows.push(['門檻', `${ev.minimumSpendScope === 'cycleTotal' ? '本期累積滿' : '單筆滿'} ${F.money(ev.minimumSpend, { decimals: 0 })}`]);
+    }
+    const pms = (ev.paymentMethods || []).map((p) => esc(p.name)).join('、');
+    rows.push(['付款方式', pms ? `${pms}${ev.matchUnspecifiedPayment ? '、直接刷卡' : ''}` : '直接刷卡（不使用電子支付）']);
+    if (ev.requireMerchantMatch) rows.push(['限定商家', esc(String(ev.merchantKeywords || '').split('\n').join('、')) || '—']);
+    if (ev.excludeMerchantMatch) rows.push(['排除商家', esc(String(ev.excludeMerchantKeywords || '').split('\n').join('、')) || '—']);
+    rows.push(['計算方式', `${ev.rewardCalcMode === 'perTransaction' ? '逐筆計算' : '加總後計算'}・${ev.rewardRounding === 'floor' ? '無條件捨去' : '四捨五入'}${Number(ev.rewardPrecision) > 0 ? `至小數 ${ev.rewardPrecision} 位` : '至整數'}`]);
+    if (ev.requiresRegistration) rows.push(['登錄', ev.registeredAt ? `已登錄（${F.date(ev.registeredAt, { year: true })}）` : '<span class="text-rose-600 dark:text-rose-400">尚未登錄</span>']);
+    return rows;
+  }
 
-  eventForm?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const submitBtn = eventForm.querySelector('button[type=submit]');
-    A.setLoading(submitBtn, true);
-    A.showError(eventFormError, '');
-    try {
-      const data = {
-        title: eventForm.title.value,
-        startDate: eventForm.startDate.value || null,
-        endDate: eventForm.endDate.value || null,
-        cycleType: eventForm.cycleType.value || 'none',
-        cycleAnchorDay: eventForm.cycleAnchorDay.value || null,
-        cashbackPercent: eventForm.cashbackPercent.value || null,
-        cashbackFixed: eventForm.cashbackFixed.value || null,
-        rewardType: eventForm.rewardType.value,
-        maxReward: eventForm.maxReward.value || null,
-        minimumSpend: eventForm.minimumSpend.value || null,
-        rewardRounding: eventForm.rewardRounding.value === 'floor' ? 'floor' : 'round',
-        rewardCalcMode: eventForm.rewardCalcMode.value === 'perTransaction' ? 'perTransaction' : 'aggregate',
-        rewardPrecision: eventForm.rewardPrecision.value || 0,
-        sourceUrl: eventForm.sourceUrl.value || null,
-        description: eventForm.description.value || null,
-        matchUnspecifiedPayment: !!eventForm.matchUnspecifiedPayment.checked,
-        requireMerchantMatch: !!eventForm.requireMerchantMatch.checked,
-        merchantKeywords: eventForm.merchantKeywords.value || null,
-        excludeMerchantMatch: !!eventForm.excludeMerchantMatch.checked,
-        excludeMerchantKeywords: eventForm.excludeMerchantKeywords.value || null,
-        cardIds: Array.from(state.selectedCardIds),
-        paymentMethodIds: Array.from(state.selectedPmIds)
-      };
-      const id = eventForm.id.value;
-      if (id) {
-        await A.jsonFetch(A.api(`/cashback/${id}`), { method: 'PUT', body: data });
-      } else {
-        await A.jsonFetch(A.api('/cashback'), { method: 'POST', body: data });
+  async function openDetail(id) {
+    let ev = findEvent(id);
+    if (!ev) {
+      try { ev = await A.get(`/cashback/${id}`); state.events.push(ev); } catch (err) { A.toast(err.message, { type: 'error' }); return; }
+    }
+    const u = ev.usage;
+    const tags = (ev.cards || []).map((c) => A.payTag(c)).concat((ev.paymentMethods || []).map((p) => A.payTag(p))).join('');
+    const link = A.safeUrl(ev.sourceUrl);
+    const body = `
+      <div class="flex flex-wrap items-center gap-1.5">${tags}</div>
+      <div class="mt-3 flex items-center gap-2"><span class="text-2xl font-extrabold text-brand-600 dark:text-brand-400">${esc(A.rewardRateText(ev))}</span>${timingBadge(ev)}</div>
+      ${u ? `<div class="mt-3 rounded-2xl bg-slate-50 p-4 dark:bg-slate-800/60">
+        <div class="grid grid-cols-2 gap-3">
+          <div><div class="stat-label">本期應得</div><div class="stat-value money">${F.reward(u.estimatedReward, ev.rewardType)}</div></div>
+          <div><div class="stat-label">本期已刷</div><div class="stat-value money">${F.money(u.usedAmount, { decimals: 0 })}</div></div>
+        </div>
+        ${usageBlock(ev, false)}
+        ${u.excludedCount ? `<div class="mt-1 text-[12px] muted">另有 ${u.excludedCount} 筆不符條件未計入</div>` : ''}
+      </div>` : ''}
+      <dl class="mt-3 divide-y divide-slate-100 dark:divide-slate-800">${conditionRows(ev).map(([k, v]) => `<div class="kv"><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl>
+      ${ev.note ? `<div class="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-500/10 dark:text-amber-200 whitespace-pre-wrap">${esc(ev.note)}</div>` : ''}
+      ${ev.description ? `<details class="mt-3"><summary class="cursor-pointer text-sm font-semibold muted">活動原文</summary><p class="mt-2 whitespace-pre-wrap text-sm muted">${esc(ev.description)}</p></details>` : ''}
+      <div class="mt-4 grid grid-cols-2 gap-2">
+        ${ev.requiresRegistration ? `<button type="button" class="btn btn-secondary btn-sm" data-act="reg">${icon('check-circle', 'i-sm')}${ev.registeredAt ? '改為未登錄' : '標記已登錄'}</button>` : ''}
+        <button type="button" class="btn btn-secondary btn-sm" data-act="txns">${icon('list', 'i-sm')}本期明細</button>
+        <button type="button" class="btn btn-secondary btn-sm" data-act="receipt">${icon('audit', 'i-sm')}記錄入帳</button>
+        <button type="button" class="btn btn-secondary btn-sm" data-act="dup">${icon('copy', 'i-sm')}複製活動</button>
+        ${link ? `<a class="btn btn-secondary btn-sm" href="${esc(link)}" target="_blank" rel="noopener">${icon('external', 'i-sm')}活動網址</a>` : ''}
+      </div>`;
+    const el = A.sheet.create({
+      id: 'detailSheet', title: ev.title, size: 'sheet-lg', body,
+      footer: `<button type="button" class="btn btn-primary btn-block" data-act="edit">${icon('pencil', 'i-sm')}編輯活動</button>`
+    });
+    el.onclick = async (e) => {
+      const b = e.target.closest('[data-act]');
+      if (!b) return;
+      const act = b.dataset.act;
+      if (act === 'edit') { A.sheet.close('detailSheet'); setTimeout(() => openForm(ev), 60); }
+      if (act === 'reg') {
+        A.setLoading(b, true);
+        try {
+          const updated = await A.send('PUT', `/cashback/${ev.id}/registration`, { registered: !ev.registeredAt });
+          replaceEvent(updated);
+          A.toast(updated.registeredAt ? '已標記為已登錄' : '已改為未登錄');
+          openDetail(ev.id);
+        } catch (err) { A.toast(err.message, { type: 'error' }); A.setLoading(b, false); }
       }
-      A.closeModal('eventModal');
+      if (act === 'dup') {
+        A.setLoading(b, true);
+        try {
+          const copy = await A.send('POST', `/cashback/${ev.id}/duplicate`, {});
+          A.sheet.close('detailSheet');
+          A.toast('已複製，請修改新活動的期間');
+          await loadEvents();
+          setTimeout(() => openForm(copy), 80);
+        } catch (err) { A.toast(err.message, { type: 'error' }); A.setLoading(b, false); }
+      }
+      if (act === 'txns') openTxnDetail(ev.id, { range: 'cycle' });
+      if (act === 'receipt') openReceipt(ev, null);
+    };
+    A.sheet.open(el);
+  }
+
+  function replaceEvent(updated) {
+    const i = state.events.findIndex((e) => e.id === updated.id);
+    if (i >= 0) state.events[i] = updated;
+    renderList();
+  }
+
+  document.addEventListener('click', async (e) => {
+    const reg = e.target.closest('[data-reg]');
+    if (reg) {
+      e.stopPropagation();
+      A.setLoading(reg, true);
+      try {
+        replaceEvent(await A.send('PUT', `/cashback/${reg.dataset.reg}/registration`, { registered: true }));
+        A.toast('已標記為已登錄');
+      } catch (err) { A.toast(err.message, { type: 'error' }); A.setLoading(reg, false); }
+      return;
+    }
+    if (e.target.closest('[data-new-event]')) { openForm(null); return; }
+    const card = e.target.closest('[data-open-event]');
+    if (card) openDetail(card.dataset.openEvent);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.matches('[data-open-event]')) openDetail(e.target.dataset.openEvent);
+  });
+
+  // ─────────────────────────── Form ───────────────────────────
+  const form = $('eventForm');
+
+  function fillAnchorOptions(type, value) {
+    const sel = form.cycleAnchorDay;
+    if (type === 'monthly') {
+      $('anchorLabel').textContent = '每月幾號重置';
+      sel.innerHTML = Array.from({ length: 31 }, (_, i) => `<option value="${i + 1}">${i + 1} 號${i + 1 >= 29 ? '（小月取月底）' : ''}</option>`).join('');
+    } else {
+      $('anchorLabel').textContent = '星期幾重置';
+      sel.innerHTML = WEEKDAY.slice(1).map((w, i) => `<option value="${i + 1}">${w}</option>`).join('');
+    }
+    sel.value = String(value || 1);
+  }
+  function syncCycleUI() {
+    const type = form.cycleType.value;
+    $('anchorField').hidden = type === 'none';
+    if (type !== 'none') fillAnchorOptions(type, form.cycleAnchorDay.value);
+    $('cycleHint').textContent = {
+      none: '上限與門檻以整個活動期間計算',
+      monthly: '每月在指定日期重置上限；29~31 號在小月會用當月最後一天',
+      weekly: '每週在指定星期重置上限',
+      biweekly: '以活動開始日那週起算，每 14 天重置一次'
+    }[type];
+  }
+  form.cycleType.addEventListener('change', syncCycleUI);
+
+  function setMode(mode) {
+    state.form.mode = mode;
+    A.setPressed($('rewardModeSeg'), '[data-mode]', mode, 'mode');
+    form.querySelectorAll('[data-show]').forEach((el) => { el.hidden = el.dataset.show !== mode; });
+  }
+  $('rewardModeSeg').addEventListener('click', (e) => { const b = e.target.closest('[data-mode]'); if (b) setMode(b.dataset.mode); });
+  function setScope(scope) {
+    state.form.scope = scope;
+    A.setPressed($('scopeSeg'), '[data-scope]', scope, 'scope');
+    $('scopeHint').textContent = scope === 'cycleTotal' ? '本期累積消費達門檻後，整期消費都有回饋（固定回饋則每期給一次）' : '每一筆都要達門檻才計入';
+  }
+  $('scopeSeg').addEventListener('click', (e) => { const b = e.target.closest('[data-scope]'); if (b) setScope(b.dataset.scope); });
+
+  function toggleBoxes() {
+    $('merchantBox').hidden = !form.requireMerchantMatch.checked;
+    $('excludeBox').hidden = !form.excludeMerchantMatch.checked;
+    $('regDateField').hidden = !form.requiresRegistration.checked;
+    $('unspecWrap').hidden = !state.form.pms.size;
+  }
+  ['requireMerchantMatch', 'excludeMerchantMatch', 'requiresRegistration'].forEach((n) => form[n].addEventListener('change', toggleBoxes));
+
+  function renderPickers() {
+    const pick = (list, set, kind) => (list.length
+      ? list.map((x) => `<button type="button" class="chip" data-pick="${kind}" data-id="${x.id}" aria-pressed="${set.has(x.id)}">${x.imageUrl ? `<img class="chip-img" src="${esc(A.asset(x.imageUrl))}" alt="">` : ''}${esc(x.name)}</button>`).join('')
+      : `<a class="text-sm text-brand-600 underline" href="${A.url('/tags')}">先新增${kind === 'card' ? '卡片' : '支付方式'}</a>`);
+    $('cardPick').innerHTML = pick(state.cards, state.form.cards, 'card');
+    $('pmPick').innerHTML = pick(state.pms, state.form.pms, 'pm');
+  }
+  form.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-pick]');
+    if (!b) return;
+    const set = b.dataset.pick === 'card' ? state.form.cards : state.form.pms;
+    const id = Number(b.dataset.id);
+    if (set.has(id)) set.delete(id); else set.add(id);
+    b.setAttribute('aria-pressed', String(set.has(id)));
+    toggleBoxes();
+  });
+
+  function openForm(ev, prefill) {
+    form.reset();
+    A.showError($('eventFormError'), '');
+    const src = ev || prefill || {};
+    form.id.value = ev ? ev.id : '';
+    $('eventSheetTitle').textContent = ev ? '編輯活動' : '新增回饋活動';
+    $('deleteEventBtn').hidden = !ev;
+    const set = (n, v) => { if (form[n]) form[n].value = v == null ? '' : v; };
+    ['title', 'startDate', 'endDate', 'sourceUrl', 'cashbackPercent', 'cashbackFixed', 'maxReward', 'minimumSpend', 'note', 'description', 'registeredAt'].forEach((n) => set(n, src[n] != null ? (['cashbackPercent', 'cashbackFixed', 'maxReward', 'minimumSpend'].includes(n) ? Number(src[n]) : src[n]) : ''));
+    set('rewardType', src.rewardType || 'cash');
+    set('cycleType', src.cycleType || 'none');
+    set('rewardCalcMode', src.rewardCalcMode || 'aggregate');
+    set('rewardRounding', src.rewardRounding || 'round');
+    set('rewardPrecision', src.rewardPrecision != null ? String(src.rewardPrecision) : '0');
+    set('merchantKeywords', Array.isArray(src.merchantKeywords) ? src.merchantKeywords.join('\n') : src.merchantKeywords || '');
+    set('excludeMerchantKeywords', Array.isArray(src.excludeMerchantKeywords) ? src.excludeMerchantKeywords.join('\n') : src.excludeMerchantKeywords || '');
+    form.matchUnspecifiedPayment.checked = !!src.matchUnspecifiedPayment;
+    form.requireMerchantMatch.checked = !!src.requireMerchantMatch;
+    form.excludeMerchantMatch.checked = !!src.excludeMerchantMatch;
+    form.requiresRegistration.checked = !!src.requiresRegistration;
+    state.form.cards = new Set((src.cards || []).map((c) => c.id).concat(src.cardIds || []));
+    state.form.pms = new Set((src.paymentMethods || []).map((p) => p.id).concat(src.paymentMethodIds || []));
+    setMode(src.cashbackFixed != null && !(src.cashbackPercent > 0) && src.cashbackFixed !== '' ? 'fixed' : 'percent');
+    setScope(src.minimumSpendScope === 'cycleTotal' ? 'cycleTotal' : 'perTransaction');
+    syncCycleUI();
+    if (src.cycleAnchorDay) form.cycleAnchorDay.value = String(src.cycleAnchorDay);
+    renderPickers();
+    toggleBoxes();
+    A.sheet.open('eventSheet');
+  }
+
+  $('newEventBtn').addEventListener('click', () => openForm(null));
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = $('saveEventBtn');
+    if (!form.title.value.trim()) { A.showError($('eventFormError'), '請輸入活動名稱'); form.title.focus(); return; }
+    const pct = state.form.mode === 'percent';
+    const body = {
+      title: form.title.value,
+      startDate: form.startDate.value || null,
+      endDate: form.endDate.value || null,
+      sourceUrl: form.sourceUrl.value.trim() || null,
+      cashbackPercent: pct ? form.cashbackPercent.value || null : null,
+      cashbackFixed: pct ? null : form.cashbackFixed.value || null,
+      rewardType: form.rewardType.value,
+      maxReward: form.maxReward.value || null,
+      minimumSpend: form.minimumSpend.value || null,
+      minimumSpendScope: state.form.scope,
+      cycleType: form.cycleType.value,
+      cycleAnchorDay: form.cycleType.value === 'none' ? null : form.cycleAnchorDay.value,
+      cardIds: Array.from(state.form.cards),
+      paymentMethodIds: Array.from(state.form.pms),
+      matchUnspecifiedPayment: state.form.pms.size ? form.matchUnspecifiedPayment.checked : false,
+      requireMerchantMatch: form.requireMerchantMatch.checked,
+      merchantKeywords: form.merchantKeywords.value,
+      excludeMerchantMatch: form.excludeMerchantMatch.checked,
+      excludeMerchantKeywords: form.excludeMerchantKeywords.value,
+      requiresRegistration: form.requiresRegistration.checked,
+      registeredAt: form.requiresRegistration.checked ? form.registeredAt.value || null : null,
+      rewardCalcMode: form.rewardCalcMode.value,
+      rewardRounding: form.rewardRounding.value,
+      rewardPrecision: form.rewardPrecision.value,
+      note: form.note.value || null,
+      description: form.description.value || null
+    };
+    A.setLoading(btn, true, '儲存中');
+    try {
+      const id = form.id.value;
+      const saved = id ? await A.send('PUT', `/cashback/${id}`, body) : await A.send('POST', '/cashback', body);
+      A.sheet.close('eventSheet');
+      A.toast(id ? '已更新活動' : '已新增活動');
       await loadEvents();
+      if (!id && saved.timing && saved.timing.phase !== 'active' && state.status === 'ongoing') A.toast('新活動尚未開始，可在「即將開始」查看');
     } catch (err) {
-      A.showError(eventFormError, err.message);
+      A.showError($('eventFormError'), err.message);
     } finally {
-      A.setLoading(submitBtn, false);
+      A.setLoading(btn, false);
     }
   });
 
-  deleteEventBtn?.addEventListener('click', async () => {
-    const id = eventForm.id.value;
+  $('deleteEventBtn').addEventListener('click', async () => {
+    const id = form.id.value;
     if (!id) return;
-    if (!confirm('確定刪除此活動？')) return;
+    if (!(await A.confirm('刪除後無法復原，此活動的入帳紀錄也會一併刪除（交易紀錄不受影響）。', { title: '刪除活動？', okText: '刪除', danger: true }))) return;
     try {
-      await A.jsonFetch(A.api(`/cashback/${id}`), { method: 'DELETE' });
-      A.closeModal('eventModal');
-      await loadEvents();
-    } catch (err) {
-      A.showError(eventFormError, err.message);
-    }
+      await A.send('DELETE', `/cashback/${id}`);
+      A.sheet.close('eventSheet');
+      A.toast('已刪除活動');
+      loadEvents();
+    } catch (err) { A.showError($('eventFormError'), err.message); }
   });
 
-  // ─── AI ───
-  aiParseBtn?.addEventListener('click', () => {
-    aiInput.value = '';
-    aiPreview.classList.add('hidden');
-    aiPreview.textContent = '';
-    A.showError(aiError, '');
-    aiApplyBtn.disabled = true;
-    state.aiResult = null;
-    A.openModal('aiModal');
+  // AI keyword helper inside the form
+  form.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-ai-kw]');
+    if (!b) return;
+    const field = b.dataset.aiKw;
+    const text = await A.prompt('貼上商家清單或活動文字', '', { maxLength: 4000, placeholder: '例如：適用全家、7-ELEVEN、萊爾富' });
+    if (!text) return;
+    A.setLoading(b, true, '分析中');
+    try {
+      const r = await A.send('POST', '/ai/parse-merchants', { text, model: state.aiModel || undefined });
+      const existing = form[field].value.split('\n').map((s) => s.trim()).filter(Boolean);
+      const seen = new Set(existing.map((s) => s.toUpperCase()));
+      (r.keywords || []).forEach((k) => { if (!seen.has(k.toUpperCase())) { existing.push(k); seen.add(k.toUpperCase()); } });
+      form[field].value = existing.join('\n');
+      A.toast(`加入 ${(r.keywords || []).length} 個關鍵字`);
+    } catch (err) { A.toast(aiError(err), { type: 'error' }); } finally { A.setLoading(b, false); }
   });
 
-  aiAnalyzeBtn?.addEventListener('click', async () => {
-    const text = aiInput.value.trim();
-    if (!text) { A.showError(aiError, '請貼上活動原文'); return; }
-    A.setLoading(aiAnalyzeBtn, true);
-    A.showError(aiError, '');
+  // ─────────────────────────── AI parse ───────────────────────────
+  function aiError(err) {
+    if (err.code === 'GEMINI_NOT_CONFIGURED') return '尚未設定 Gemini 金鑰，請到「設定 → AI 金鑰」新增';
+    return err.message;
+  }
+  $('aiParseBtn').addEventListener('click', () => {
+    A.showError($('aiParseError'), '');
+    if (!state.aiModels.length) loadModels();
+    A.sheet.open('aiParseSheet');
+  });
+  $('aiParseRun').addEventListener('click', async () => {
+    const text = $('aiParseInput').value.trim();
+    if (!text) { A.showError($('aiParseError'), '請貼上活動文字'); return; }
+    const btn = $('aiParseRun');
+    A.setLoading(btn, true, 'AI 解析中');
+    A.showError($('aiParseError'), '');
     try {
-      const data = await A.jsonFetch(A.api('/ai/parse-event'), {
-        method: 'POST', body: { text, model: state.aiModel || undefined }
-      });
-      state.aiResult = data;
-      aiPreview.classList.remove('hidden');
-      aiPreview.textContent = JSON.stringify(data, null, 2);
-      aiApplyBtn.disabled = false;
+      const r = await A.send('POST', '/ai/parse-event', { text, model: state.aiModel || undefined });
+      const lower = (s) => String(s || '').toLowerCase().replace(/\s+/g, '');
+      const match = (names, list) => (names || []).map((n) => list.find((x) => lower(x.name).includes(lower(n)) || lower(n).includes(lower(x.name)))).filter(Boolean).map((x) => x.id);
+      const prefill = {
+        ...r,
+        description: r.description || text,
+        cardIds: match(r.cardNames, state.cards),
+        paymentMethodIds: match(r.paymentMethodNames, state.pms),
+        requireMerchantMatch: !!r.requireMerchantMatch && (r.merchantKeywords || []).length > 0,
+        excludeMerchantMatch: !!r.excludeMerchantMatch && (r.excludeMerchantKeywords || []).length > 0,
+        sourceUrl: A.safeUrl(r.sourceUrl)
+      };
+      A.sheet.close('aiParseSheet');
+      $('aiParseInput').value = '';
+      setTimeout(() => {
+        openForm(null, prefill);
+        const unmatched = (r.cardNames || []).length + (r.paymentMethodNames || []).length - prefill.cardIds.length - prefill.paymentMethodIds.length;
+        A.toast(unmatched > 0 ? '已填入，部分卡片/支付對不到，請手動勾選' : '已填入，請檢查後儲存');
+      }, 80);
     } catch (err) {
-      A.showError(aiError, err.message);
-      aiApplyBtn.disabled = true;
+      A.showError($('aiParseError'), aiError(err));
     } finally {
-      A.setLoading(aiAnalyzeBtn, false);
+      A.setLoading(btn, false);
     }
   });
 
-  aiApplyBtn?.addEventListener('click', () => {
-    if (!state.aiResult) return;
-    A.closeModal('aiModal');
-    openEventModal(null);
-
-    const r = state.aiResult;
-    eventForm.title.value = r.title || '';
-    eventForm.startDate.value = r.startDate || '';
-    eventForm.endDate.value = r.endDate || '';
-    eventForm.cashbackPercent.value = r.cashbackPercent ?? '';
-    eventForm.cashbackFixed.value = r.cashbackFixed ?? '';
-    eventForm.rewardType.value = ['point', 'cash', 'coupon', 'other'].includes(r.rewardType) ? r.rewardType : 'cash';
-    eventForm.maxReward.value = r.maxReward ?? '';
-    eventForm.minimumSpend.value = r.minimumSpend ?? '';
-    eventForm.rewardRounding.value = r.rewardRounding === 'floor' ? 'floor' : 'round';
-    eventForm.rewardCalcMode.value = r.rewardCalcMode === 'perTransaction' ? 'perTransaction' : 'aggregate';
-    eventForm.rewardPrecision.value = Number.isInteger(r.rewardPrecision) ? Math.min(6, Math.max(0, r.rewardPrecision)) : 0;
-    eventForm.sourceUrl.value = r.sourceUrl || '';
-    eventForm.description.value = r.description || '';
-    eventForm.cycleType.value = ['none', 'weekly', 'biweekly', 'monthly'].includes(r.cycleType) ? r.cycleType : 'none';
-    eventForm.cycleAnchorDay.value = r.cycleAnchorDay ?? '';
-    eventForm.matchUnspecifiedPayment.checked = !!r.matchUnspecifiedPayment;
-    const aiKeywords = Array.isArray(r.merchantKeywords) ? r.merchantKeywords.filter(Boolean) : [];
-    eventForm.requireMerchantMatch.checked = !!r.requireMerchantMatch && aiKeywords.length > 0;
-    eventForm.merchantKeywords.value = aiKeywords.join('\n');
-    const aiExcludeKeywords = Array.isArray(r.excludeMerchantKeywords) ? r.excludeMerchantKeywords.filter(Boolean) : [];
-    eventForm.excludeMerchantMatch.checked = !!r.excludeMerchantMatch && aiExcludeKeywords.length > 0;
-    eventForm.excludeMerchantKeywords.value = aiExcludeKeywords.join('\n');
-    updateCycleUI();
-    updateMerchantKeywordsUI();
-    updateExcludeMerchantKeywordsUI();
-
-    // Best-effort fuzzy match cardNames / paymentMethodNames against existing tags
-    const lower = (s) => String(s || '').toLowerCase().trim();
-    for (const cn of (r.cardNames || [])) {
-      const found = state.cards.find((c) => lower(c.name).includes(lower(cn)) || lower(cn).includes(lower(c.name)));
-      if (found) state.selectedCardIds.add(found.id);
+  async function loadModels() {
+    try {
+      const d = await A.get('/ai/models');
+      state.aiModels = d.models || [];
+      const has = (n) => state.aiModels.some((m) => m.name === n);
+      if (!has(state.aiModel)) state.aiModel = has(d.default) ? d.default : (state.aiModels[0] && state.aiModels[0].name) || '';
+      const opts = state.aiModels.map((m) => `<option value="${esc(m.name)}" ${m.name === state.aiModel ? 'selected' : ''}>${esc(m.displayName || m.name)}</option>`).join('');
+      $('aiModel').innerHTML = opts;
+      $('aiParseModel').innerHTML = opts;
+    } catch (_) {
+      $('aiModel').innerHTML = '<option value="">（無法載入）</option>';
+      $('aiParseModel').innerHTML = '<option value="">（無法載入）</option>';
     }
-    for (const pn of (r.paymentMethodNames || [])) {
-      const found = state.pms.find((p) => lower(p.name).includes(lower(pn)) || lower(pn).includes(lower(p.name)));
-      if (found) state.selectedPmIds.add(found.id);
-    }
-    // refresh chips
-    cardChipsBox.querySelectorAll('button').forEach((btn) => {
-      btn.classList.toggle('chip-active', state.selectedCardIds.has(parseInt(btn.dataset.id, 10)));
-    });
-    pmChipsBox.querySelectorAll('button').forEach((btn) => {
-      btn.classList.toggle('chip-active', state.selectedPmIds.has(parseInt(btn.dataset.id, 10)));
-    });
+  }
+  ['aiModel', 'aiParseModel'].forEach((id) => $(id).addEventListener('change', (e) => {
+    state.aiModel = e.target.value;
+    A.store.set('aiModel', state.aiModel);
+    $('aiModel').value = state.aiModel;
+    $('aiParseModel').value = state.aiModel;
+  }));
+
+  // ─────────────────────────── AI search ───────────────────────────
+  $('aiSearchForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const query = $('aiQuery').value.trim();
+    if (!query) return;
+    const btn = $('aiSearchBtn');
+    A.setLoading(btn, true, 'AI 分析中');
+    $('aiResults').innerHTML = A.skeletonRows(2, 'h-40');
+    try {
+      const d = await A.send('POST', '/ai/search-rewards', { query, web: $('aiWeb').checked, model: state.aiModel || undefined });
+      const refs = new Map((d.refs || []).map((r) => [r.id, r]));
+      $('aiResults').innerHTML = `<div class="rounded-2xl border border-brand-100 bg-brand-50 p-4 text-sm text-brand-900 dark:border-brand-500/20 dark:bg-brand-500/10 dark:text-brand-100">${icon('sparkles', 'i-sm')} ${esc(d.summary)}${d.cached ? ' <span class="faint">（快取）</span>' : ''}</div>`
+        + (d.recommendations || []).map((r, i) => `<article class="card card-pad">
+          <div class="flex items-start gap-3"><span class="grid h-8 w-8 shrink-0 place-items-center rounded-full ${i === 0 ? 'bg-brand-600 text-white' : 'bg-slate-100 dark:bg-slate-800'} text-sm font-bold">${i + 1}</span>
+            <div class="min-w-0 flex-1"><h3 class="font-semibold">${esc(r.title)}</h3>${r.rewardText ? `<span class="badge badge-brand mt-1">${esc(r.rewardText)}</span>` : ''}</div></div>
+          ${r.reason ? `<p class="mt-2 whitespace-pre-wrap text-sm muted">${esc(r.reason)}</p>` : ''}
+          ${(r.cautions || []).length ? `<ul class="mt-2 space-y-1 rounded-xl bg-amber-50 p-3 text-[13px] text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">${r.cautions.map((c) => `<li>• ${esc(c)}</li>`).join('')}</ul>` : ''}
+          <div class="mt-2 flex flex-wrap gap-2">${(r.eventIds || []).map((id) => refs.get(id)).filter(Boolean).map((x) => `<button type="button" class="btn btn-tonal btn-xs" data-open-event="${x.id}">${esc(x.title)}</button>`).join('')}
+          ${A.safeUrl(r.checkUrl) ? `<a class="btn btn-secondary btn-xs" target="_blank" rel="noopener" href="${esc(r.checkUrl)}">${icon('external', 'i-sm')}確認名額</a>` : ''}</div>
+        </article>`).join('');
+      if (!(d.recommendations || []).length) $('aiResults').insertAdjacentHTML('beforeend', `<div class="card">${A.emptyState('search', '找不到相關方案')}</div>`);
+      // Make referenced events openable even if not in the current list filter.
+      if ((d.refs || []).length && !state.events.length) loadEvents();
+    } catch (err) {
+      $('aiResults').innerHTML = `<div class="card">${A.emptyState('alert', 'AI 搜尋失敗', aiError(err))}</div>`;
+    } finally { A.setLoading(btn, false); }
   });
 
-  // Boot
-  loadTags().then(loadEvents);
-  loadAiModels();
+  // ─────────────────────────── Audit ───────────────────────────
+  function rangeQuery() {
+    const qs = new URLSearchParams({ status: 'all' });
+    const now = new Date();
+    if (state.range === 'prevCycle') qs.set('range', 'prevCycle');
+    else if (state.range === 'thisMonth' || state.range === 'lastMonth') {
+      const off = state.range === 'thisMonth' ? 0 : -1;
+      qs.set('range', 'range');
+      qs.set('from', new Date(now.getFullYear(), now.getMonth() + off, 1).toISOString());
+      qs.set('to', new Date(now.getFullYear(), now.getMonth() + off + 1, 1).toISOString());
+    } else if (state.range === 'custom') {
+      if (!$('raFrom').value || !$('raTo').value) return null;
+      const [fy, fm, fd] = $('raFrom').value.split('-').map(Number);
+      const [ty, tm, td] = $('raTo').value.split('-').map(Number);
+      qs.set('range', 'range');
+      qs.set('from', new Date(fy, fm - 1, fd).toISOString());
+      qs.set('to', new Date(ty, tm - 1, td + 1).toISOString());
+    } else {
+      qs.set('status', 'active');
+    }
+    return qs;
+  }
+
+  function auditCard(ev) {
+    const u = ev.usage;
+    const r = ev.reconciliation || {};
+    let status = '<span class="badge badge-slate">未記錄入帳</span>';
+    if (r.received != null) {
+      if (r.difference < 0) status = `<span class="badge badge-rose">少 ${F.reward(-r.difference, ev.rewardType)}</span>`;
+      else if (r.difference > 0) status = `<span class="badge badge-green">多 ${F.reward(r.difference, ev.rewardType)}</span>`;
+      else status = `<span class="badge badge-green">${icon('check', 'i-sm')}相符</span>`;
+    }
+    const receipts = (ev.receipts || []).map((x) => `<button type="button" class="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-[13px] active:bg-slate-50 dark:active:bg-slate-800" data-receipt="${ev.id}:${x.id}"><span class="muted">${F.date(x.receivedDate, { year: true })} 入帳${x.note ? `・${esc(x.note)}` : ''}</span><span class="font-semibold money">${F.reward(x.receivedAmount, ev.rewardType)}</span></button>`).join('');
+    return `<article class="card card-pad">
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0"><h3 class="line-clamp-2 text-[15px] font-semibold">${esc(ev.title)}</h3>
+          <div class="mt-0.5 text-[12px] muted">${ev.period.start ? F.date(ev.period.start, { year: true }) : '不限'} ～ ${ev.period.end ? F.date(ev.period.end, { year: true }) : '不限'}・${u.txnCount} 筆 ${F.money(u.usedAmount, { decimals: 0 })}</div></div>
+        ${status}
+      </div>
+      <div class="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-3 dark:bg-slate-800/60">
+        <div><div class="stat-label">應得</div><div class="text-lg font-bold money">${F.reward(u.estimatedReward, ev.rewardType)}</div>${u.capReached ? '<div class="text-[11px] text-emerald-600">已達上限</div>' : ''}</div>
+        <div><div class="stat-label">實際入帳</div><div class="text-lg font-bold money">${r.received != null ? F.reward(r.received, ev.rewardType) : '—'}</div></div>
+      </div>
+      ${receipts ? `<div class="mt-2">${receipts}</div>` : ''}
+      <div class="mt-3 flex gap-2">
+        <button type="button" class="btn btn-secondary btn-sm flex-1" data-audit-txns="${ev.id}">${icon('list', 'i-sm')}明細</button>
+        <button type="button" class="btn btn-tonal btn-sm flex-1" data-audit-receipt="${ev.id}">${icon('plus', 'i-sm')}記錄入帳</button>
+      </div>
+    </article>`;
+  }
+
+  async function loadAudit() {
+    const qs = rangeQuery();
+    $('customRange').hidden = state.range !== 'custom';
+    A.setPressed($('rangeChips'), '[data-range]', state.range, 'range');
+    if (!qs) { $('auditList').innerHTML = `<div class="card">${A.emptyState('calendar', '請選擇起訖日期')}</div>`; return; }
+    $('auditList').innerHTML = A.skeletonRows(2, 'h-44');
+    try {
+      const d = await A.get('/cashback/rewards-audit?' + qs);
+      state.audit = d;
+      const tt = $('auditTotals');
+      tt.querySelector('[data-t="expected"]').textContent = F.money(d.totals.expected, { decimals: 0 });
+      tt.querySelector('[data-t="received"]').textContent = F.money(d.totals.received, { decimals: 0 });
+      tt.querySelector('[data-t="spend"]').textContent = F.money(d.totals.spend, { decimals: 0 });
+      $('auditList').innerHTML = d.events.length
+        ? d.events.map(auditCard).join('')
+        : `<div class="card">${A.emptyState('audit', state.range === 'prevCycle' ? '還沒有已結算的週期' : '這段期間沒有可核對的活動', state.range === 'prevCycle' ? '有週期且已跑完至少一期的活動才會出現' : '')}</div>`;
+    } catch (err) {
+      $('auditList').innerHTML = `<div class="card">${A.errorState(err)}</div>`;
+    }
+  }
+  $('rangeChips').addEventListener('click', (e) => { const b = e.target.closest('[data-range]'); if (b) { state.range = b.dataset.range; loadAudit(); } });
+  ['raFrom', 'raTo'].forEach((id) => $(id).addEventListener('change', loadAudit));
+  $('auditList').addEventListener('click', (e) => {
+    const t = e.target.closest('[data-audit-txns]');
+    const r = e.target.closest('[data-audit-receipt]');
+    const ex = e.target.closest('[data-receipt]');
+    if (t) openTxnDetail(t.dataset.auditTxns, { fromAudit: true });
+    if (r) openReceipt(state.audit.events.find((x) => x.id === Number(r.dataset.auditReceipt)), null);
+    if (ex) {
+      const [eid, rid] = ex.dataset.receipt.split(':').map(Number);
+      const ev = state.audit.events.find((x) => x.id === eid);
+      openReceipt(ev, ev.receipts.find((x) => x.id === rid));
+    }
+  });
+
+  async function openTxnDetail(eventId, opts) {
+    let ev = opts.fromAudit && state.audit ? state.audit.events.find((x) => x.id === Number(eventId)) : null;
+    const el = A.sheet.create({ id: 'txnSheet', title: '計入明細', size: 'sheet-lg', body: A.skeletonRows(4, 'h-12') });
+    A.sheet.open(el);
+    try {
+      if (!ev) {
+        const d = await A.get(`/cashback/rewards-audit?status=all&range=cycle`);
+        ev = d.events.find((x) => x.id === Number(eventId));
+      }
+      if (!ev) { el.querySelector('.sheet-body').innerHTML = A.emptyState('list', '此活動沒有綁定卡片'); return; }
+      const u = ev.usage;
+      const perTxn = new Map((u.txnRewards || []).map((x) => [x.transactionId, x.reward]));
+      const row = (t, extra) => `<div class="row !px-0"><div class="min-w-0 flex-1"><div class="truncate text-sm font-medium">${esc(t.note || '（無備註）')}</div><div class="text-[12px] muted">${F.datetime(t.transactionAt)}${extra || ''}</div></div><div class="text-right"><div class="text-sm font-semibold money">${F.money(t.amount)}</div>${perTxn.has(t.id) ? `<div class="text-[12px] text-emerald-600">+${F.num(perTxn.get(t.id))}</div>` : ''}</div></div>`;
+      const formula = u.rewardKind === 'percent'
+        ? (u.rewardCalcMode === 'perTransaction' ? '每筆各自計算回饋後加總' : `消費合計 ${F.money(u.usedAmount)} × ${F.num(ev.cashbackPercent, 3)}% 一次計算`)
+        : `每筆符合條件得 ${F.reward(ev.cashbackFixed, ev.rewardType)}`;
+      el.querySelector('.sheet-title').textContent = ev.title;
+      el.querySelector('.sheet-body').innerHTML = `
+        <div class="rounded-xl bg-slate-50 p-3 text-[13px] dark:bg-slate-800/60">${esc(formula)}，${u.rewardRounding === 'floor' ? '無條件捨去' : '四捨五入'}${u.rewardPrecision ? `至小數 ${u.rewardPrecision} 位` : '至整數'}${u.cap != null ? `，上限 ${F.reward(u.cap, ev.rewardType)}` : ''} → <b>${F.reward(u.estimatedReward, ev.rewardType)}</b></div>
+        <h3 class="section-title">計入（${u.transactions.length}）</h3>
+        <div class="list">${u.transactions.map((t) => row(t)).join('') || '<div class="py-4 text-center text-sm muted">沒有交易</div>'}</div>
+        ${u.excludedTransactions.length ? `<h3 class="section-title">未計入（${u.excludedTransactions.length}）</h3><div class="list">${u.excludedTransactions.map((t) => row(t, `・<span class="text-amber-600">${esc((REASON[t.reason] || (() => t.reason))(t))}</span>`)).join('')}</div>` : ''}`;
+    } catch (err) {
+      el.querySelector('.sheet-body').innerHTML = A.errorState(err);
+    }
+  }
+
+  // Receipts
+  const rForm = $('receiptForm');
+  function openReceipt(ev, receipt) {
+    if (!ev) return;
+    rForm.reset();
+    A.showError($('receiptError'), '');
+    rForm.eventId.value = ev.id;
+    rForm.rid.value = receipt ? receipt.id : '';
+    $('deleteReceiptBtn').hidden = !receipt;
+    $('receiptTitle').textContent = receipt ? '修改入帳紀錄' : '記錄實際入帳';
+    const period = receipt || ev.period || (ev.timing && ev.timing.cycle ? { start: ev.timing.cycle.start, end: ev.timing.cycle.end } : {});
+    rForm.periodStart.value = receipt ? receipt.periodStart || '' : period.start || ev.startDate || '';
+    rForm.periodEnd.value = receipt ? receipt.periodEnd || '' : period.end || ev.endDate || '';
+    rForm.receivedDate.value = receipt ? receipt.receivedDate : F.inputDate(new Date());
+    rForm.receivedAmount.value = receipt ? receipt.receivedAmount : '';
+    rForm.note.value = receipt ? receipt.note || '' : '';
+    const expected = receipt ? receipt.expectedAmount : (ev.usage && ev.usage.estimatedReward);
+    $('receiptInfo').innerHTML = `<div class="font-semibold">${esc(ev.title)}</div><div class="mt-0.5 muted">系統計算應得 <b class="text-slate-900 dark:text-white">${expected != null ? F.reward(expected, ev.rewardType) : '—'}</b>（依期間自動重算並存成快照）</div>`;
+    A.sheet.open('receiptSheet');
+    setTimeout(() => rForm.receivedAmount.focus(), 120);
+  }
+  rForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (rForm.receivedAmount.value === '') { A.showError($('receiptError'), '請輸入實際入帳金額'); return; }
+    const body = {
+      receivedAmount: rForm.receivedAmount.value,
+      receivedDate: rForm.receivedDate.value || null,
+      periodStart: rForm.periodStart.value || null,
+      periodEnd: rForm.periodEnd.value || null,
+      note: rForm.note.value || null
+    };
+    const btn = rForm.closest('.sheet').querySelector('[type=submit]');
+    A.setLoading(btn, true);
+    try {
+      const rid = rForm.rid.value;
+      const saved = rid
+        ? await A.send('PUT', `/cashback/${rForm.eventId.value}/receipts/${rid}`, body)
+        : await A.send('POST', `/cashback/${rForm.eventId.value}/receipts`, body);
+      A.sheet.close('receiptSheet');
+      const diff = saved.difference;
+      A.toast(diff == null ? '已記錄入帳' : (diff < 0 ? `已記錄，比應得少 ${F.num(-diff)}` : (diff > 0 ? `已記錄，比應得多 ${F.num(diff)}` : '已記錄，與應得相符')), { type: diff < 0 ? 'error' : undefined });
+      if (state.tab === 'audit') loadAudit();
+    } catch (err) {
+      A.showError($('receiptError'), err.message);
+    } finally { A.setLoading(btn, false); }
+  });
+  $('deleteReceiptBtn').addEventListener('click', async () => {
+    if (!(await A.confirm('刪除這筆入帳紀錄？', { okText: '刪除', danger: true }))) return;
+    try {
+      await A.send('DELETE', `/cashback/${rForm.eventId.value}/receipts/${rForm.rid.value}`);
+      A.sheet.close('receiptSheet');
+      A.toast('已刪除');
+      loadAudit();
+    } catch (err) { A.showError($('receiptError'), err.message); }
+  });
+
+  // ─────────────────────────── Boot ───────────────────────────
+  async function boot() {
+    A.setPressed($('statusChips'), '[data-status]', state.status, 'status');
+    $('fSort').value = state.sort;
+    $('fGroup').value = state.group;
+    syncFilterDot();
+    try {
+      const { cards, pms } = await A.loadTags();
+      state.cards = cards;
+      state.pms = pms;
+      $('fCard').insertAdjacentHTML('beforeend', cards.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join(''));
+      $('fPm').insertAdjacentHTML('beforeend', pms.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join(''));
+    } catch (_) { /* pickers will show a link instead */ }
+    setTab(state.tab);
+    await loadEvents();
+    const openId = params.get('open') || params.get('edit');
+    if (openId) {
+      if (!findEvent(openId)) {
+        try { state.events.push(await A.get(`/cashback/${openId}`)); } catch (_) { /* ignore */ }
+      }
+      if (params.get('edit')) openForm(findEvent(openId)); else openDetail(openId);
+    } else if (params.get('new')) openForm(null);
+    ['open', 'edit', 'new'].forEach((k) => params.delete(k));
+    history.replaceState(history.state, '', location.pathname + (params.toString() ? '?' + params : ''));
+  }
+  boot();
 })();

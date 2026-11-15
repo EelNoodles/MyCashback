@@ -37,6 +37,11 @@ module.exports = (sequelize, DataTypes) => {
       comment: '使用者上傳的卡片圖片路徑'
     },
     color: { type: DataTypes.STRING(20), allowNull: true },
+    aliases: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: '別名清單（換行或逗號分隔）；外部記帳系統回報的卡片名稱若與別名相符也能對應到此卡'
+    },
     note: { type: DataTypes.STRING(500), allowNull: true }
   }, {
     tableName: 'cards',

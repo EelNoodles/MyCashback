@@ -14,6 +14,11 @@ module.exports = (sequelize, DataTypes) => {
       comment: '使用者上傳的支付方式圖片路徑'
     },
     color: { type: DataTypes.STRING(20), allowNull: true },
+    aliases: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: '別名清單（換行或逗號分隔），供外部記帳系統回報名稱比對'
+    },
     note: { type: DataTypes.STRING(500), allowNull: true }
   }, {
     tableName: 'payment_methods',

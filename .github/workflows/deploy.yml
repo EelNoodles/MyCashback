@@ -1,27 +1,70 @@
-name: Deploy to Vultr VPS
+name: Test & Deploy
 
 on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
 
 jobs:
-  deploy:
+  test:
     runs-on: ubuntu-latest
-    
-    # 👇 就是這一行！告訴 GitHub 去解鎖 production 的 Environment secrets
-    environment: MyVPS 
-    
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: mycashback_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
     steps:
-      - name: SSH into VPS and trigger deployment
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build CSS
+        run: npm run build:css
+      - name: API docs are up to date
+        run: npm run docs:check
+      - name: Unit + integration tests (MySQL 8)
+        run: npm test
+        env:
+          TEST_DB_HOST: 127.0.0.1
+          TEST_DB_PORT: 3306
+          TEST_DB_USER: root
+          TEST_DB_PASSWORD: root
+          TEST_DB_NAME: mycashback_test
+
+  deploy:
+    # Only after tests pass, and only for pushes to main.
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: MyVPS
+    steps:
+      - name: SSH into VPS and deploy
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_KEY }}
+          script_stop: true
           script: |
+            set -e
             cd /var/www/MyCashback
             git pull
             npm install --include=dev
             npm run build:css
+            # Additive, idempotent schema upgrade (also runs at boot). If it
+            # fails, the restart below is skipped and the old process keeps running.
+            npm run db:migrate
             pm2 restart mycashback

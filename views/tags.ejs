@@ -1,143 +1,75 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
-<head>
-  <%- include('partials/head', { title: title }) %>
-</head>
-<body class="min-h-screen bg-slate-50 text-slate-800 pb-20 sm:pb-0">
-  <%- include('partials/nav', { active: active }) %>
+<head><%- include('partials/head') %></head>
+<body data-auth="1">
+  <%- include('partials/nav', { active }) %>
+  <header class="appbar">
+    <div class="appbar-inner">
+      <a href="<%= url('/settings') %>" class="icon-btn -ml-2 md:hidden" aria-label="返回設定"><svg class="i"><use href="#i-chevron-left"/></svg></a>
+      <h1 class="appbar-title">卡片與支付方式</h1>
+    </div>
+  </header>
 
-  <main class="max-w-6xl mx-auto px-4 py-6 space-y-6">
-    <header>
-      <h1 class="text-2xl font-semibold">卡片與支付方式</h1>
-      <p class="text-sm text-slate-500">管理回饋活動可綁定的標籤</p>
-    </header>
+  <main class="page page-wide">
+    <h2 class="section-title !mt-0"><span>卡片 / 帳戶</span><button type="button" id="newCardBtn">＋ 新增卡片</button></h2>
+    <div id="cardGrid" class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"></div>
 
-    <section class="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <!-- Cards -->
-      <div>
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="font-semibold text-lg">信用卡 / 銀行 / 金融卡</h2>
-          <button id="newCardBtn" class="text-xs px-3 py-1.5 rounded-lg bg-brand-600 text-white hover:bg-brand-700">+ 新增</button>
-        </div>
-        <div id="cardList" class="space-y-6">
-          <div class="text-sm text-slate-400" data-loading>載入中…</div>
-        </div>
-      </div>
-
-      <!-- Payment methods -->
-      <div>
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="font-semibold text-lg">支付方式</h2>
-          <button id="newPmBtn" class="text-xs px-3 py-1.5 rounded-lg bg-brand-600 text-white hover:bg-brand-700">+ 新增</button>
-        </div>
-        <div id="pmList" class="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          <div class="text-sm text-slate-400" data-loading>載入中…</div>
-        </div>
-      </div>
-    </section>
+    <h2 class="section-title"><span>支付方式</span><button type="button" id="newPmBtn">＋ 新增支付</button></h2>
+    <div id="pmList" class="card overflow-hidden"></div>
+    <p class="mt-3 px-1 text-[12px] muted">「別名」讓外部記帳系統用不同寫法回報時也能對應到同一張卡 / 支付（例如「Pi卡」「玉山Pi拍錢包信用卡」）。</p>
   </main>
 
-  <!-- Card modal -->
-  <div id="cardModal" class="hidden fixed inset-0 z-40 bg-black/40 grid place-items-center px-3 overflow-y-auto py-6">
-    <div class="bg-white w-full min-w-0 max-w-lg rounded-2xl shadow-xl p-5 animate-slide-up">
-      <div class="flex items-center justify-between">
-        <h3 class="text-lg font-semibold" id="cardModalTitle">新增卡片</h3>
-        <button type="button" data-dismiss="cardModal" class="text-slate-400 hover:text-slate-600">✕</button>
-      </div>
-
-      <!-- Live preview -->
-      <div id="cardPreview" class="mt-3 mx-auto w-full max-w-[320px]"></div>
-
-      <form id="cardForm" class="mt-4 space-y-3" enctype="multipart/form-data">
-        <input type="hidden" name="id" />
-        <label class="block">
-          <span class="text-xs text-slate-500">名稱 <span class="text-rose-500">*</span></span>
-          <input name="name" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-        </label>
-        <div class="grid grid-cols-2 gap-3">
-          <label class="block">
-            <span class="text-xs text-slate-500">類型</span>
-            <select name="kind" class="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">
-              <option value="credit">信用卡</option>
-              <option value="debit">金融卡</option>
-              <option value="bank">銀行帳戶</option>
-              <option value="other">其他</option>
-            </select>
-          </label>
-          <label class="block">
-            <span class="text-xs text-slate-500">發卡銀行</span>
-            <input name="issuer" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          </label>
+  <!-- Card form -->
+  <div class="sheet-root" id="cardSheet" hidden role="dialog" aria-modal="true" aria-labelledby="cTitle">
+    <div class="sheet-backdrop" data-close></div>
+    <div class="sheet sheet-full">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header"><h2 class="sheet-title" id="cTitle">新增卡片</h2><button type="button" class="icon-btn" data-close aria-label="關閉"><svg class="i"><use href="#i-x"/></svg></button></div>
+      <form id="cardForm" class="sheet-body space-y-3" novalidate enctype="multipart/form-data">
+        <input type="hidden" name="id">
+        <div id="cardPreview" class="mx-auto w-full max-w-[320px]"></div>
+        <label class="field"><span class="label">名稱 *</span><input name="name" class="input" maxlength="120" required placeholder="例如：玉山 Pi 卡"></label>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="field"><span class="label">類型</span><select name="kind" class="select"><option value="credit">信用卡</option><option value="debit">金融卡</option><option value="bank">銀行帳戶</option><option value="other">其他</option></select></label>
+          <label class="field"><span class="label">卡片組織</span><select name="network" class="select"><option value="">未指定</option><option value="visa">VISA</option><option value="mastercard">Mastercard</option><option value="jcb">JCB</option><option value="amex">AMEX</option><option value="unionpay">銀聯</option><option value="other">其他</option></select></label>
         </div>
-        <label class="block">
-          <span class="text-xs text-slate-500">卡號 (13-19 碼)</span>
-          <input name="pan" inputmode="numeric" autocomplete="off" spellcheck="false"
-                 placeholder="1234 5678 9012 3456"
-                 class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono tracking-wider" />
-          <span class="text-[10px] text-slate-400 mt-1 block">以 AES-256-GCM 加密儲存；平常只顯示末四碼。編輯時留空可保留原本卡號。</span>
-        </label>
-        <label class="block">
-          <span class="text-xs text-slate-500">卡片組織</span>
-          <select name="network" class="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">
-            <option value="">未指定</option>
-            <option value="visa">VISA</option>
-            <option value="mastercard">Mastercard</option>
-            <option value="jcb">JCB</option>
-            <option value="amex">AMEX</option>
-            <option value="unionpay">銀聯</option>
-            <option value="other">其他</option>
-          </select>
-        </label>
-        <label class="block">
-          <span class="text-xs text-slate-500">卡面圖片 (選填，無則使用漸層)</span>
-          <input name="image" type="file" accept="image/*" class="mt-1 block text-sm" />
-        </label>
-        <label class="block">
-          <span class="text-xs text-slate-500">備註</span>
-          <input name="note" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-        </label>
-        <div id="cardFormError" class="hidden text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2"></div>
-        <div class="flex justify-end gap-2 pt-1">
-          <button type="button" data-dismiss="cardModal" class="px-3 py-2 text-sm rounded-lg border border-slate-300">取消</button>
-          <button id="deleteCardBtn" type="button" class="hidden px-3 py-2 text-sm rounded-lg border border-rose-300 text-rose-600">刪除</button>
-          <button type="submit" class="px-3 py-2 text-sm rounded-lg bg-brand-600 text-white hover:bg-brand-700">
-            <span data-state="idle">儲存</span><span data-state="loading" class="hidden">儲存中…</span>
-          </button>
-        </div>
+        <label class="field"><span class="label">發卡銀行</span><input name="issuer" class="input" maxlength="120"></label>
+        <label class="field"><span class="label">完整卡號（選填）</span><input name="pan" class="input font-mono tracking-wider" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="1234 5678 9012 3456"><span class="hint" id="panHint">加密儲存，平常只顯示末四碼；可一鍵複製。外部回報時也能用末四碼對應。</span></label>
+        <label class="check" id="removePanWrap" hidden><input type="checkbox" name="removePan" value="true"><span class="text-sm">刪除已儲存的完整卡號</span></label>
+        <label class="field"><span class="label">別名</span><textarea name="aliases" rows="2" class="textarea" placeholder="每行一個，例如&#10;Pi卡"></textarea></label>
+        <label class="field"><span class="label">卡面圖片</span><input name="image" type="file" accept="image/*" class="block w-full text-sm"></label>
+        <label class="check" id="removeImgWrap" hidden><input type="checkbox" name="removeImage" value="true"><span class="text-sm">移除卡面圖片</span></label>
+        <label class="field"><span class="label">備註</span><input name="note" class="input" maxlength="500"></label>
+        <div class="error-box" id="cError" hidden></div>
       </form>
+      <div class="sheet-footer">
+        <button type="button" class="btn btn-danger !px-3" id="cDelete" hidden aria-label="刪除"><svg class="i"><use href="#i-trash"/></svg></button>
+        <button type="button" class="btn btn-secondary flex-1" data-close>取消</button>
+        <button type="submit" form="cardForm" class="btn btn-primary flex-[2]">儲存</button>
+      </div>
     </div>
   </div>
 
-  <!-- Payment method modal -->
-  <div id="pmModal" class="hidden fixed inset-0 z-40 bg-black/40 grid place-items-center px-3">
-    <div class="bg-white w-full min-w-0 max-w-md rounded-2xl shadow-xl p-5 animate-slide-up">
-      <div class="flex items-center justify-between">
-        <h3 class="text-lg font-semibold" id="pmModalTitle">新增支付方式</h3>
-        <button type="button" data-dismiss="pmModal" class="text-slate-400 hover:text-slate-600">✕</button>
-      </div>
-      <form id="pmForm" class="mt-3 space-y-3" enctype="multipart/form-data">
-        <input type="hidden" name="id" />
-        <label class="block">
-          <span class="text-xs text-slate-500">名稱 <span class="text-rose-500">*</span></span>
-          <input name="name" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-        </label>
-        <label class="block">
-          <span class="text-xs text-slate-500">圖片 (選填)</span>
-          <input name="image" type="file" accept="image/*" class="mt-1 block text-sm" />
-        </label>
-        <label class="block">
-          <span class="text-xs text-slate-500">備註</span>
-          <input name="note" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-        </label>
-        <div id="pmFormError" class="hidden text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2"></div>
-        <div class="flex justify-end gap-2 pt-1">
-          <button type="button" data-dismiss="pmModal" class="px-3 py-2 text-sm rounded-lg border border-slate-300">取消</button>
-          <button id="deletePmBtn" type="button" class="hidden px-3 py-2 text-sm rounded-lg border border-rose-300 text-rose-600">刪除</button>
-          <button type="submit" class="px-3 py-2 text-sm rounded-lg bg-brand-600 text-white hover:bg-brand-700">
-            <span data-state="idle">儲存</span><span data-state="loading" class="hidden">儲存中…</span>
-          </button>
-        </div>
+  <!-- Payment method form -->
+  <div class="sheet-root" id="pmSheet" hidden role="dialog" aria-modal="true" aria-labelledby="pTitle">
+    <div class="sheet-backdrop" data-close></div>
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header"><h2 class="sheet-title" id="pTitle">新增支付方式</h2><button type="button" class="icon-btn" data-close aria-label="關閉"><svg class="i"><use href="#i-x"/></svg></button></div>
+      <form id="pmForm" class="sheet-body space-y-3" novalidate enctype="multipart/form-data">
+        <input type="hidden" name="id">
+        <label class="field"><span class="label">名稱 *</span><input name="name" class="input" maxlength="120" required placeholder="例如：LINE Pay"></label>
+        <label class="field"><span class="label">別名</span><textarea name="aliases" rows="2" class="textarea" placeholder="每行一個，例如&#10;LINEPAY"></textarea></label>
+        <label class="field"><span class="label">圖示</span><input name="image" type="file" accept="image/*" class="block w-full text-sm"></label>
+        <label class="check" id="pRemoveImgWrap" hidden><input type="checkbox" name="removeImage" value="true"><span class="text-sm">移除圖示</span></label>
+        <label class="field"><span class="label">備註</span><input name="note" class="input" maxlength="500"></label>
+        <div class="error-box" id="pError" hidden></div>
       </form>
+      <div class="sheet-footer">
+        <button type="button" class="btn btn-danger !px-3" id="pDelete" hidden aria-label="刪除"><svg class="i"><use href="#i-trash"/></svg></button>
+        <button type="button" class="btn btn-secondary flex-1" data-close>取消</button>
+        <button type="submit" form="pmForm" class="btn btn-primary flex-[2]">儲存</button>
+      </div>
     </div>
   </div>
 
