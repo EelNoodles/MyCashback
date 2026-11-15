@@ -5,6 +5,16 @@
   const F = A.fmt;
   const $ = (id) => document.getElementById(id);
 
+  // ─── Theme ───
+  const themeSeg = $('themeSeg');
+  A.setPressed(themeSeg, '[data-theme]', window.MCB_THEME ? window.MCB_THEME.get() : 'system', 'theme');
+  themeSeg.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-theme]');
+    if (!b || !window.MCB_THEME) return;
+    window.MCB_THEME.set(b.dataset.theme);
+    A.setPressed(themeSeg, '[data-theme]', b.dataset.theme, 'theme');
+  });
+
   // ─── Counts ───
   A.loadTags().then(({ cards, pms }) => { $('tagCount').textContent = `${cards.length} 張卡・${pms.length} 種支付`; }).catch(() => {});
 

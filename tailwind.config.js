@@ -4,7 +4,10 @@ module.exports = {
     './views/**/*.ejs',
     './public/js/**/*.js'
   ],
-  darkMode: 'media',
+  // Dark mode follows a `dark` class on <html>, set before first paint by the
+  // inline script in views/partials/head.ejs from the user's choice
+  // (跟隨系統 / 淺色 / 深色 in 設定).
+  darkMode: 'class',
   // Built from variables at runtime (method-${m}, credit-card--${kind}).
   safelist: [
     'method-get', 'method-post', 'method-put', 'method-delete',

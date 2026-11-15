@@ -255,5 +255,14 @@
     if (r) openPoint(r.dataset.point);
   });
 
-  loadPoints();
+  loadPoints().then(() => {
+    // Deep link from the dashboard: /points?open=<id>
+    const params = new URLSearchParams(location.search);
+    const openId = params.get('open');
+    if (openId && state.points.some((p) => p.id === Number(openId))) openPoint(openId);
+    if (openId) {
+      params.delete('open');
+      history.replaceState(history.state, '', location.pathname + (params.toString() ? '?' + params : ''));
+    }
+  });
 })();

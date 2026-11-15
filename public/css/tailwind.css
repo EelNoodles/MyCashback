@@ -24,7 +24,13 @@
 
 @layer components {
   /* ── Layout ── */
-  .page { @apply mx-auto w-full max-w-3xl px-4 pb-28 pt-3 md:pb-12 md:pt-6; }
+  .page {
+    @apply mx-auto w-full max-w-3xl px-4 pb-28 pt-3 md:pb-12 md:pt-6;
+    /* Safety net: one too-wide item must never widen the document — phones
+       would zoom the whole app (and the tab bar) out. Set on the page box, not
+       body, so it isn't propagated to the viewport; clip keeps sticky working. */
+    overflow-x: clip;
+  }
   .page-wide { @apply max-w-5xl; }
 
   .appbar {
@@ -54,7 +60,7 @@
   .section-title a, .section-title button { @apply text-[13px] font-medium normal-case tracking-normal text-brand-600 dark:text-brand-400; }
 
   /* ── Surfaces ── */
-  .card { @apply rounded-2xl border border-slate-200/70 bg-white shadow-soft dark:border-slate-800 dark:bg-slate-900 dark:shadow-none; }
+  .card { @apply min-w-0 rounded-2xl border border-slate-200/70 bg-white shadow-soft dark:border-slate-800 dark:bg-slate-900 dark:shadow-none; }
   .card-pad { @apply p-4; }
   .card-link { @apply block transition active:scale-[0.99] md:hover:border-slate-300 md:dark:hover:border-slate-700; }
   .hero { @apply relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-600 via-brand-600 to-indigo-600 p-5 text-white shadow-lift; }
@@ -123,7 +129,7 @@
   .chip[aria-pressed="true"], .chip.on { @apply border-brand-600 bg-brand-600 text-white dark:border-brand-500 dark:bg-brand-500; }
   .chip-img { @apply h-5 w-5 rounded object-cover; }
 
-  .badge { @apply inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold leading-5; }
+  .badge { @apply inline-flex max-w-full items-center gap-1 overflow-hidden whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold leading-5; }
   .badge-slate { @apply bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300; }
   .badge-brand { @apply bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300; }
   .badge-green { @apply bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300; }
@@ -177,7 +183,7 @@
   .kv > dd { @apply min-w-0 text-right font-medium; }
 
   .prose-doc { @apply text-sm leading-relaxed text-slate-700 dark:text-slate-300; }
-  .prose-doc code { @apply rounded bg-slate-100 px-1 py-0.5 font-mono text-[12px] text-slate-800 dark:bg-slate-800 dark:text-slate-200; }
+  .prose-doc code { @apply break-all rounded bg-slate-100 px-1 py-0.5 font-mono text-[12px] text-slate-800 dark:bg-slate-800 dark:text-slate-200; }
   .codeblock { @apply max-h-96 overflow-auto whitespace-pre rounded-xl bg-slate-900 p-3 font-mono text-[12px] leading-relaxed text-slate-100 dark:bg-black/40; }
   .method { @apply inline-flex min-w-[56px] justify-center rounded-md px-1.5 py-0.5 font-mono text-[11px] font-bold; }
   .method-get { @apply bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300; }

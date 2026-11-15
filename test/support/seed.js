@@ -57,11 +57,21 @@ async function seed(call, user = 'demo') {
     cardIds: [cube.id], requiresRegistration: true
   });
 
+  // Long, unbroken names — real campaign titles look like this and once
+  // stretched the phone layout to ~1000px wide.
+  const dawho = await post('/api/tags/cards', { name: '永豐銀行 DAWHO 現金回饋信用卡（大戶等級專屬加碼版）', kind: 'credit', issuer: '永豐銀行' });
+  await post('/api/cashback', {
+    title: '永豐 DAWHO 現金回饋信用卡 國內一般消費最高 3.5% ＋ 指定行動支付加碼 4%（需登錄，每月上限 NT$500，名額有限送完為止）',
+    startDate: day(-15), endDate: day(45), cashbackPercent: 3.5, maxReward: 500, cycleType: 'monthly', cycleAnchorDay: 1,
+    cardIds: [dawho.id], paymentMethodIds: [linepay.id, jko.id, pxpay.id], matchUnspecifiedPayment: true
+  });
+
   const txns = [
     [pi.id, linepay.id, 1280, '全聯 信義店', 1], [pi.id, linepay.id, 860, '家樂福', 2], [pi.id, linepay.id, 3200, 'momo 購物', 4],
     [pi.id, linepay.id, 1500, '台電 繳費', 5], [cube.id, null, 499, 'Netflix', 0], [cube.id, null, 2380, 'Apple', 3],
     [gogo.id, jko.id, 650, '麥當勞', 1], [gogo.id, jko.id, 1820, '屈臣氏', 6], [cube.id, pxpay.id, 128, '7-ELEVEN 敦化', 2],
-    [richart.id, null, 1200, '水電', 7], [pi.id, null, 350, '星巴克', 0], [cube.id, null, 15800, '機票', 35]
+    [richart.id, null, 1200, '水電', 7], [pi.id, null, 350, '星巴克', 0], [cube.id, null, 15800, '機票', 35],
+    [dawho.id, linepay.id, 2680, 'Uniqlo_Online_Store_Order#20261115-0012345678', 1]
   ];
   for (const [cardId, paymentMethodId, amount, note, daysAgo] of txns) {
     await post('/api/transactions', { cardId, paymentMethodId, amount, note, transactionAt: at(daysAgo, 9 + (amount % 10)), latitude: 25.03 + amount / 1e6, longitude: 121.56 });

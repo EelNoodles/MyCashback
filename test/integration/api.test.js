@@ -372,6 +372,11 @@ test('dashboard summary: attention items and totals', async (t) => {
   assert.ok(s.body.events.ongoing >= 3);
   assert.equal(s.body.events.upcoming, 1);
   assert.equal(s.body.points.totalValue, 250);
+  assert.equal(s.body.points.items.length, 1);
+  assert.equal(s.body.points.items[0].name, '全聯福利點');
+  assert.equal(s.body.points.items[0].currentBalance, 250);
+  assert.equal(s.body.points.items[0].value, 250);
+  assert.equal(s.body.points.items[0].nextExpiry.daysLeft, 5);
   assert.ok(s.body.rewards.estimatedThisCycle >= 200);
   assert.equal(s.body.rewards.receivedThisMonth, 200);
 });

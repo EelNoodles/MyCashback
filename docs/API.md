@@ -698,7 +698,26 @@ curl -X GET 'https://你的網域/api/external/recommend?amount=1000' \
     "totalValue": 2150,
     "valuedCount": 2,
     "monthEarned": 160,
-    "monthSpent": 0
+    "monthSpent": 0,
+    "items": [
+      {
+        "id": 4,
+        "name": "全聯福利點",
+        "issuer": "全聯",
+        "imageUrl": null,
+        "color": "hsl(20,70%,55%)",
+        "currentBalance": 1350,
+        "valuePerPoint": 1,
+        "value": 1350,
+        "monthEarned": 120,
+        "monthSpent": 0,
+        "nextExpiry": {
+          "amount": 215,
+          "expiryDate": "2026-11-20",
+          "daysLeft": 5
+        }
+      }
+    ]
   },
   "attention": [
     {
@@ -1225,7 +1244,26 @@ App 首頁一次取得所有統計與提醒（取代逐一抓取各點數歷史�
     "totalValue": 2150,
     "valuedCount": 2,
     "monthEarned": 160,
-    "monthSpent": 0
+    "monthSpent": 0,
+    "items": [
+      {
+        "id": 4,
+        "name": "全聯福利點",
+        "issuer": "全聯",
+        "imageUrl": null,
+        "color": "hsl(20,70%,55%)",
+        "currentBalance": 1350,
+        "valuePerPoint": 1,
+        "value": 1350,
+        "monthEarned": 120,
+        "monthSpent": 0,
+        "nextExpiry": {
+          "amount": 215,
+          "expiryDate": "2026-11-20",
+          "daysLeft": 5
+        }
+      }
+    ]
   },
   "attention": [
     {
