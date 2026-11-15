@@ -4,457 +4,397 @@ const path = require('path');
 const fs = require('fs');
 const { Op } = require('sequelize');
 const { sequelize, Point, PointHistory, PointExpiry } = require('../models');
-const logger = require('../config/logger');
+const E = require('../services/rewardEngine');
+const V = require('../utils/validate');
 
 function pickColorFromName(name) {
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
-  const hue = hash % 360;
-  return `hsl(${hue}, 70%, 55%)`;
+  return `hsl(${hash % 360}, 70%, 55%)`;
 }
 
-function toNumber(v, fallback = 0) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : fallback;
+const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
+
+function removeUpload(imageUrl) {
+  if (imageUrl && imageUrl.startsWith('/uploads/')) {
+    const file = path.resolve('./public', imageUrl.replace(/^\//, ''));
+    fs.promises.unlink(file).catch(() => {});
+  }
+}
+
+/** YYYY-MM in APP_TIMEZONE. */
+function monthKey(d) {
+  return E.formatDateOnly(d).slice(0, 7);
 }
 
 /**
- * Recompute every history row's balanceAfter (ordered by occurredAt asc, id asc)
- * for a given point and update Point.currentBalance to the latest value.
+ * Rebuilds every history row's delta / balanceAfter in timeline order
+ * (occurredAt asc, id asc) and syncs Point.currentBalance.
+ *
+ * A 'set' row is an absolute statement ("balance was X at that time"): its
+ * targetBalance is the anchor and its delta is derived from whatever came
+ * before — so inserting, editing or deleting an earlier row never changes
+ * the balance the user stated. (Previously the derived delta was frozen at
+ * creation and the stated balance drifted.)
  */
 async function recalcPoint(pointId, transaction) {
-  const histories = await PointHistory.findAll({
+  const rows = await PointHistory.findAll({
     where: { pointId },
     order: [['occurredAt', 'ASC'], ['id', 'ASC']],
     transaction
   });
-
   let running = 0;
-  for (const h of histories) {
+  for (const h of rows) {
+    let delta = Number(h.delta);
     if (h.changeType === 'set') {
-      running = toNumber(h.delta) === 0 && toNumber(h.balanceAfter) !== 0
-        ? toNumber(h.balanceAfter)
-        : running + toNumber(h.delta);
-      // For 'set', delta is the diff vs previous running balance; balanceAfter == running
+      const target = h.targetBalance != null ? Number(h.targetBalance) : Number(h.balanceAfter);
+      delta = round2(target - running);
+      running = round2(target);
+      if (h.targetBalance == null || Number(h.targetBalance) !== running) h.targetBalance = running;
     } else {
-      running += toNumber(h.delta);
+      running = round2(running + delta);
     }
-    h.balanceAfter = running;
-    await h.save({ transaction });
+    if (Number(h.delta) !== delta) h.delta = delta;
+    if (Number(h.balanceAfter) !== running) h.balanceAfter = running;
+    if (h.changed()) await h.save({ transaction });
   }
-
-  await Point.update(
-    { currentBalance: running },
-    { where: { id: pointId }, transaction }
-  );
+  await Point.update({ currentBalance: running }, { where: { id: pointId }, transaction });
   return running;
 }
 
+async function ownedPoint(userId, id) {
+  const point = await Point.findOne({ where: { id: V.idParam(id) || 0, userId } });
+  if (!point) throw V.httpError(404, 'NOT_FOUND', '找不到此點數');
+  return point;
+}
+
+function pointToPublic(p, extra = {}) {
+  const o = typeof p.toJSON === 'function' ? p.toJSON() : p;
+  const vpp = o.valuePerPoint != null ? Number(o.valuePerPoint) : null;
+  return {
+    ...o,
+    currentBalance: Number(o.currentBalance),
+    valuePerPoint: vpp,
+    value: vpp != null ? round2(Number(o.currentBalance) * vpp) : null,
+    fallbackColor: o.color || pickColorFromName(o.name || '?'),
+    initials: (o.name || '?').trim().slice(0, 2).toUpperCase(),
+    ...extra
+  };
+}
+
+/** Month earned / spent across all of a user's points (APP_TIMEZONE months). */
+async function monthFlows(userId, now = new Date()) {
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const rows = await PointHistory.findAll({
+    where: { occurredAt: { [Op.gte]: start, [Op.lt]: end } },
+    include: [{ model: Point, as: 'point', attributes: ['id', 'valuePerPoint'], where: { userId } }],
+    attributes: ['id', 'pointId', 'changeType', 'delta'],
+    raw: true,
+    nest: true
+  });
+  const byPoint = new Map();
+  let earned = 0;
+  let spent = 0;
+  // Only explicit earn / spend count; 'set' rows are balance corrections.
+  for (const r of rows) {
+    const d = Number(r.delta);
+    const b = byPoint.get(r.pointId) || { earned: 0, spent: 0 };
+    if (r.changeType === 'earn') { b.earned += d; earned += d; }
+    if (r.changeType === 'spend') { b.spent += -d; spent += -d; }
+    byPoint.set(r.pointId, b);
+  }
+  return { earned: round2(earned), spent: round2(spent), byPoint };
+}
+
+exports.monthFlows = monthFlows;
+exports.pointToPublic = pointToPublic;
+
 // GET /api/points
-exports.list = async (req, res, next) => {
-  try {
-    const points = await Point.findAll({
-      where: { userId: req.user.id },
-      order: [['createdAt', 'DESC']]
+exports.list = V.ah(async (req, res) => {
+  const [points, expiries, flows] = await Promise.all([
+    Point.findAll({ where: { userId: req.user.id }, order: [['createdAt', 'DESC']] }),
+    PointExpiry.findAll({ where: { userId: req.user.id, status: 'active' }, order: [['expiryDate', 'ASC']] }),
+    monthFlows(req.user.id)
+  ]);
+  const today = E.startOfDay(new Date());
+  res.json(points.map((p) => {
+    const next = expiries.find((x) => x.pointId === p.id);
+    const f = flows.byPoint.get(p.id) || { earned: 0, spent: 0 };
+    return pointToPublic(p, {
+      monthEarned: round2(f.earned),
+      monthSpent: round2(f.spent),
+      nextExpiry: next ? {
+        id: next.id,
+        amount: Number(next.amount),
+        expiryDate: next.expiryDate,
+        daysLeft: E.daysBetween(today, E.parseDateOnly(next.expiryDate))
+      } : null
     });
-    res.json(points.map((p) => ({
-      ...p.toJSON(),
-      fallbackColor: p.color || pickColorFromName(p.name || '?'),
-      initials: (p.name || '?').trim().slice(0, 2).toUpperCase()
-    })));
-  } catch (err) { next(err); }
-};
+  }));
+});
 
 // GET /api/points/:id
-exports.get = async (req, res, next) => {
-  try {
-    const point = await Point.findOne({
-      where: { id: req.params.id, userId: req.user.id }
-    });
-    if (!point) return res.status(404).json({ error: 'NOT_FOUND' });
-    res.json(point);
-  } catch (err) { next(err); }
-};
+exports.get = V.ah(async (req, res) => {
+  res.json(pointToPublic(await ownedPoint(req.user.id, req.params.id)));
+});
 
-// POST /api/points (multipart or json)
-exports.create = async (req, res, next) => {
-  try {
-    const { name, issuer, note, currentBalance } = req.body;
-    if (!name) return res.status(400).json({ error: 'NAME_REQUIRED' });
+// POST /api/points (multipart or JSON)
+exports.create = V.ah(async (req, res) => {
+  const b = req.body || {};
+  const name = V.trimOrNull(b.name, 120);
+  if (!name) throw V.httpError(400, 'NAME_REQUIRED', '請輸入點數名稱');
+  const initial = V.numberOrNull(b.currentBalance, 'currentBalance', { min: 0, max: 1e12 }) || 0;
+  const valuePerPoint = V.numberOrNull(b.valuePerPoint, 'valuePerPoint', { min: 0, max: 1e6 });
+  const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
 
-    const file = req.file;
-    const imageUrl = file ? `/uploads/${file.filename}` : null;
-
-    const initialBalance = toNumber(currentBalance, 0);
-
-    const result = await sequelize.transaction(async (t) => {
-      const point = await Point.create({
-        userId: req.user.id,
-        name: String(name).trim(),
-        issuer: issuer ? String(issuer).trim() : null,
-        imageUrl,
-        color: pickColorFromName(String(name)),
-        note: note || null,
-        currentBalance: initialBalance
+  const point = await sequelize.transaction(async (t) => {
+    const p = await Point.create({
+      userId: req.user.id,
+      name,
+      issuer: V.trimOrNull(b.issuer, 120),
+      imageUrl,
+      color: pickColorFromName(name),
+      valuePerPoint,
+      note: V.trimOrNull(b.note, 5000),
+      currentBalance: initial
+    }, { transaction: t });
+    if (initial !== 0) {
+      await PointHistory.create({
+        pointId: p.id,
+        changeType: 'set',
+        delta: initial,
+        targetBalance: initial,
+        balanceAfter: initial,
+        occurredAt: new Date(),
+        note: '初始建立'
       }, { transaction: t });
-
-      if (initialBalance !== 0) {
-        await PointHistory.create({
-          pointId: point.id,
-          changeType: 'set',
-          delta: initialBalance,
-          balanceAfter: initialBalance,
-          occurredAt: new Date(),
-          note: '初始建立'
-        }, { transaction: t });
-      }
-      return point;
-    });
-
-    res.status(201).json(result);
-  } catch (err) { next(err); }
-};
-
-// PUT /api/points/:id (metadata only — balance changes go through history)
-exports.update = async (req, res, next) => {
-  try {
-    const point = await Point.findOne({
-      where: { id: req.params.id, userId: req.user.id }
-    });
-    if (!point) return res.status(404).json({ error: 'NOT_FOUND' });
-
-    const { name, issuer, note } = req.body;
-    if (name !== undefined) point.name = String(name).trim();
-    if (issuer !== undefined) point.issuer = issuer ? String(issuer).trim() : null;
-    if (note !== undefined) point.note = note || null;
-    if (req.file) {
-      // remove old uploaded file (best effort) when replaced
-      if (point.imageUrl && point.imageUrl.startsWith('/uploads/')) {
-        const old = path.resolve('./public', point.imageUrl.replace(/^\//, ''));
-        fs.promises.unlink(old).catch(() => {});
-      }
-      point.imageUrl = `/uploads/${req.file.filename}`;
     }
-    await point.save();
-    res.json(point);
-  } catch (err) { next(err); }
-};
+    return p;
+  });
+  res.status(201).json(pointToPublic(point));
+});
+
+// PUT /api/points/:id  (metadata only — balance changes go through histories)
+exports.update = V.ah(async (req, res) => {
+  const point = await ownedPoint(req.user.id, req.params.id);
+  const b = req.body || {};
+  if (V.has(b, 'name')) {
+    const name = V.trimOrNull(b.name, 120);
+    if (!name) throw V.httpError(400, 'NAME_REQUIRED', '請輸入點數名稱');
+    point.name = name;
+  }
+  if (V.has(b, 'issuer')) point.issuer = V.trimOrNull(b.issuer, 120);
+  if (V.has(b, 'note')) point.note = V.trimOrNull(b.note, 5000);
+  if (V.has(b, 'valuePerPoint')) point.valuePerPoint = V.numberOrNull(b.valuePerPoint, 'valuePerPoint', { min: 0, max: 1e6 });
+  if (req.file) {
+    removeUpload(point.imageUrl);
+    point.imageUrl = `/uploads/${req.file.filename}`;
+  } else if (V.bool(b.removeImage)) {
+    removeUpload(point.imageUrl);
+    point.imageUrl = null;
+  }
+  await point.save();
+  res.json(pointToPublic(point));
+});
 
 // DELETE /api/points/:id
-exports.remove = async (req, res, next) => {
-  try {
-    const point = await Point.findOne({
-      where: { id: req.params.id, userId: req.user.id }
-    });
-    if (!point) return res.status(404).json({ error: 'NOT_FOUND' });
-
-    if (point.imageUrl && point.imageUrl.startsWith('/uploads/')) {
-      const old = path.resolve('./public', point.imageUrl.replace(/^\//, ''));
-      fs.promises.unlink(old).catch(() => {});
-    }
-    await point.destroy();
-    res.json({ ok: true });
-  } catch (err) { next(err); }
-};
+exports.remove = V.ah(async (req, res) => {
+  const point = await ownedPoint(req.user.id, req.params.id);
+  removeUpload(point.imageUrl);
+  await sequelize.transaction(async (t) => {
+    await PointHistory.destroy({ where: { pointId: point.id }, transaction: t });
+    await PointExpiry.destroy({ where: { pointId: point.id }, transaction: t });
+    await point.destroy({ transaction: t });
+  });
+  res.json({ ok: true });
+});
 
 // ---------- Histories ----------
 
+function historyToPublic(h) {
+  const o = typeof h.toJSON === 'function' ? h.toJSON() : h;
+  return {
+    ...o,
+    delta: Number(o.delta),
+    balanceAfter: Number(o.balanceAfter),
+    targetBalance: o.targetBalance != null ? Number(o.targetBalance) : null
+  };
+}
+
 // GET /api/points/:id/histories
-exports.listHistories = async (req, res, next) => {
-  try {
-    const point = await Point.findOne({
-      where: { id: req.params.id, userId: req.user.id }
-    });
-    if (!point) return res.status(404).json({ error: 'NOT_FOUND' });
+exports.listHistories = V.ah(async (req, res) => {
+  const point = await ownedPoint(req.user.id, req.params.id);
+  const histories = await PointHistory.findAll({
+    where: { pointId: point.id },
+    order: [['occurredAt', 'DESC'], ['id', 'DESC']]
+  });
+  const buckets = new Map();
+  for (const h of histories) {
+    const key = monthKey(h.occurredAt);
+    if (!buckets.has(key)) buckets.set(key, { period: key, earned: 0, spent: 0, net: 0 });
+    const b = buckets.get(key);
+    const d = Number(h.delta);
+    if (h.changeType === 'earn') b.earned += d;
+    else if (h.changeType === 'spend') b.spent += -d;
+    b.net = round2(b.net + d); // includes 'set' corrections
+    b.earned = round2(b.earned);
+    b.spent = round2(b.spent);
+  }
+  const stats = Array.from(buckets.values()).sort((a, b) => b.period.localeCompare(a.period));
+  res.json({ point: pointToPublic(point), histories: histories.map(historyToPublic), stats });
+});
 
-    const histories = await PointHistory.findAll({
-      where: { pointId: point.id },
-      order: [['occurredAt', 'DESC'], ['id', 'DESC']]
-    });
-
-    // Build per-period analytics: month-bucket spent / earned / netChange
-    const buckets = new Map();
-    for (const h of histories) {
-      const key = (h.occurredAt instanceof Date ? h.occurredAt : new Date(h.occurredAt))
-        .toISOString().slice(0, 7); // YYYY-MM
-      if (!buckets.has(key)) buckets.set(key, { period: key, earned: 0, spent: 0, net: 0 });
-      const bucket = buckets.get(key);
-      const delta = Number(h.delta);
-      if (h.changeType === 'spend' || delta < 0) bucket.spent += Math.abs(delta);
-      else if (h.changeType === 'earn' || delta > 0) bucket.earned += delta;
-      else if (h.changeType === 'set') bucket.net += delta;
-      bucket.net = bucket.earned - bucket.spent;
+function parseChange(body, { partial }) {
+  const out = {};
+  if (!partial || V.has(body, 'changeType')) {
+    if (!['set', 'earn', 'spend'].includes(body.changeType)) {
+      throw V.httpError(400, 'INVALID_CHANGE_TYPE', 'changeType 必須是 set / earn / spend');
     }
-    const stats = Array.from(buckets.values()).sort((a, b) => b.period.localeCompare(a.period));
+    out.changeType = body.changeType;
+  }
+  if (!partial || V.has(body, 'amount')) {
+    const amt = V.numberOrNull(body.amount, 'amount', { min: 0, max: 1e12 });
+    if (amt == null) throw V.httpError(400, 'INVALID_AMOUNT', '請輸入數量');
+    out.amount = amt;
+  }
+  if (!partial || V.has(body, 'occurredAt')) out.occurredAt = V.dateTimeOrNull(body.occurredAt, 'occurredAt') || new Date();
+  if (!partial || V.has(body, 'note')) out.note = V.trimOrNull(body.note, 500);
+  return out;
+}
 
-    res.json({ point, histories, stats });
-  } catch (err) { next(err); }
-};
+function applyAmount(h, type, amount) {
+  h.changeType = type;
+  if (type === 'set') {
+    h.targetBalance = amount;
+    h.delta = 0; // derived in recalc
+  } else {
+    h.targetBalance = null;
+    h.delta = type === 'earn' ? amount : -amount;
+  }
+}
 
-// POST /api/points/:id/histories
-// body: { changeType: 'set'|'earn'|'spend', amount, occurredAt?, note? }
-exports.addHistory = async (req, res, next) => {
-  try {
-    const point = await Point.findOne({
-      where: { id: req.params.id, userId: req.user.id }
-    });
-    if (!point) return res.status(404).json({ error: 'NOT_FOUND' });
-
-    const { changeType, amount, occurredAt, note } = req.body;
-    if (!['set', 'earn', 'spend'].includes(changeType)) {
-      return res.status(400).json({ error: 'INVALID_CHANGE_TYPE' });
-    }
-    const amt = toNumber(amount);
-    if (!Number.isFinite(amt) || amt < 0) {
-      return res.status(400).json({ error: 'INVALID_AMOUNT' });
-    }
-
-    const occurred = occurredAt ? new Date(occurredAt) : new Date();
-    if (Number.isNaN(occurred.getTime())) {
-      return res.status(400).json({ error: 'INVALID_DATE' });
-    }
-
-    let delta;
-    if (changeType === 'earn') delta = amt;
-    else if (changeType === 'spend') delta = -amt;
-    else {
-      // 'set' means user states "current balance is X at this point in time".
-      // We still represent it as a relative delta vs the running balance immediately before this
-      // entry (recalc will normalise). For now we record amt as the absolute target;
-      // recalc will fix delta/balanceAfter properly.
-      delta = 0; // placeholder; recalc will rebuild
-    }
-
-    await sequelize.transaction(async (t) => {
-      // For 'set' we need balanceAfter to anchor the running balance.
-      const created = await PointHistory.create({
-        pointId: point.id,
-        changeType,
-        delta,
-        balanceAfter: changeType === 'set' ? amt : 0,
-        occurredAt: occurred,
-        note: note || null
-      }, { transaction: t });
-
-      if (changeType === 'set') {
-        // Compute the implied delta = amt - prevRunningBalance
-        const prevRows = await PointHistory.findAll({
-          where: {
-            pointId: point.id,
-            id: { [Op.ne]: created.id },
-            [Op.or]: [
-              { occurredAt: { [Op.lt]: occurred } },
-              {
-                occurredAt: occurred,
-                id: { [Op.lt]: created.id }
-              }
-            ]
-          },
-          transaction: t
-        });
-        let prev = 0;
-        for (const r of prevRows) {
-          if (r.changeType === 'set') prev = Number(r.balanceAfter);
-          else prev += Number(r.delta);
-        }
-        created.delta = amt - prev;
-        await created.save({ transaction: t });
-      }
-
-      await recalcPoint(point.id, t);
-    });
-
-    res.status(201).json({ ok: true });
-  } catch (err) { next(err); }
-};
+// POST /api/points/:id/histories   body: { changeType, amount, occurredAt?, note? }
+exports.addHistory = V.ah(async (req, res) => {
+  const point = await ownedPoint(req.user.id, req.params.id);
+  const c = parseChange(req.body || {}, { partial: false });
+  let created;
+  const balance = await sequelize.transaction(async (t) => {
+    const h = PointHistory.build({ pointId: point.id, occurredAt: c.occurredAt, note: c.note, balanceAfter: 0 });
+    applyAmount(h, c.changeType, c.amount);
+    created = await h.save({ transaction: t });
+    return recalcPoint(point.id, t);
+  });
+  const fresh = await PointHistory.findByPk(created.id);
+  res.status(201).json({ ok: true, history: historyToPublic(fresh), currentBalance: balance });
+});
 
 // PUT /api/points/:id/histories/:hid
-exports.updateHistory = async (req, res, next) => {
-  try {
-    const point = await Point.findOne({
-      where: { id: req.params.id, userId: req.user.id }
-    });
-    if (!point) return res.status(404).json({ error: 'NOT_FOUND' });
-
-    const history = await PointHistory.findOne({
-      where: { id: req.params.hid, pointId: point.id }
-    });
-    if (!history) return res.status(404).json({ error: 'HISTORY_NOT_FOUND' });
-
-    const { changeType, amount, occurredAt, note } = req.body;
-    if (changeType && !['set', 'earn', 'spend'].includes(changeType)) {
-      return res.status(400).json({ error: 'INVALID_CHANGE_TYPE' });
-    }
-    const amt = amount !== undefined ? toNumber(amount) : null;
-    if (amt !== null && (!Number.isFinite(amt) || amt < 0)) {
-      return res.status(400).json({ error: 'INVALID_AMOUNT' });
-    }
-
-    await sequelize.transaction(async (t) => {
-      if (changeType) history.changeType = changeType;
-      if (occurredAt) {
-        const d = new Date(occurredAt);
-        if (Number.isNaN(d.getTime())) throw Object.assign(new Error('INVALID_DATE'), { status: 400 });
-        history.occurredAt = d;
-      }
-      if (note !== undefined) history.note = note || null;
-
-      const finalType = history.changeType;
-      if (amt !== null) {
-        if (finalType === 'earn') history.delta = amt;
-        else if (finalType === 'spend') history.delta = -amt;
-        else if (finalType === 'set') {
-          history.balanceAfter = amt;
-          // delta will be recomputed below
-        }
-      }
-      await history.save({ transaction: t });
-
-      // For 'set', recompute the implied delta vs prior cumulative.
-      if (history.changeType === 'set') {
-        const prevRows = await PointHistory.findAll({
-          where: {
-            pointId: point.id,
-            id: { [Op.ne]: history.id },
-            [Op.or]: [
-              { occurredAt: { [Op.lt]: history.occurredAt } },
-              {
-                occurredAt: history.occurredAt,
-                id: { [Op.lt]: history.id }
-              }
-            ]
-          },
-          transaction: t
-        });
-        let prev = 0;
-        for (const r of prevRows) {
-          if (r.changeType === 'set') prev = Number(r.balanceAfter);
-          else prev += Number(r.delta);
-        }
-        history.delta = Number(history.balanceAfter) - prev;
-        await history.save({ transaction: t });
-      }
-
-      await recalcPoint(point.id, t);
-    });
-
-    res.json({ ok: true });
-  } catch (err) { next(err); }
-};
+exports.updateHistory = V.ah(async (req, res) => {
+  const point = await ownedPoint(req.user.id, req.params.id);
+  const h = await PointHistory.findOne({ where: { id: V.idParam(req.params.hid) || 0, pointId: point.id } });
+  if (!h) throw V.httpError(404, 'HISTORY_NOT_FOUND', '找不到此筆紀錄');
+  const c = parseChange(req.body || {}, { partial: true });
+  const type = c.changeType || h.changeType;
+  let amount = c.amount;
+  if (amount == null) {
+    amount = h.changeType === 'set'
+      ? Number(h.targetBalance != null ? h.targetBalance : h.balanceAfter)
+      : Math.abs(Number(h.delta));
+  }
+  const balance = await sequelize.transaction(async (t) => {
+    applyAmount(h, type, amount);
+    if (c.occurredAt) h.occurredAt = c.occurredAt;
+    if (V.has(c, 'note')) h.note = c.note;
+    await h.save({ transaction: t });
+    return recalcPoint(point.id, t);
+  });
+  const fresh = await PointHistory.findByPk(h.id);
+  res.json({ ok: true, history: historyToPublic(fresh), currentBalance: balance });
+});
 
 // DELETE /api/points/:id/histories/:hid
-exports.deleteHistory = async (req, res, next) => {
-  try {
-    const point = await Point.findOne({
-      where: { id: req.params.id, userId: req.user.id }
-    });
-    if (!point) return res.status(404).json({ error: 'NOT_FOUND' });
+exports.deleteHistory = V.ah(async (req, res) => {
+  const point = await ownedPoint(req.user.id, req.params.id);
+  const h = await PointHistory.findOne({ where: { id: V.idParam(req.params.hid) || 0, pointId: point.id } });
+  if (!h) throw V.httpError(404, 'HISTORY_NOT_FOUND', '找不到此筆紀錄');
+  const balance = await sequelize.transaction(async (t) => {
+    await h.destroy({ transaction: t });
+    return recalcPoint(point.id, t);
+  });
+  res.json({ ok: true, currentBalance: balance });
+});
 
-    const history = await PointHistory.findOne({
-      where: { id: req.params.hid, pointId: point.id }
-    });
-    if (!history) return res.status(404).json({ error: 'HISTORY_NOT_FOUND' });
+// ---------- Expiries ----------
 
-    await sequelize.transaction(async (t) => {
-      await history.destroy({ transaction: t });
-      await recalcPoint(point.id, t);
-    });
-    res.json({ ok: true });
-  } catch (err) {
-    logger.error('deleteHistory error', { err: err.message });
-    next(err);
+function expiryToPublic(x, today = E.startOfDay(new Date())) {
+  const o = typeof x.toJSON === 'function' ? x.toJSON() : x;
+  return { ...o, amount: Number(o.amount), daysLeft: E.daysBetween(today, E.parseDateOnly(o.expiryDate)) };
+}
+
+exports.listExpiries = V.ah(async (req, res) => {
+  const point = await ownedPoint(req.user.id, req.params.id);
+  const rows = await PointExpiry.findAll({ where: { pointId: point.id }, order: [['expiryDate', 'ASC']] });
+  res.json(rows.map((r) => expiryToPublic(r)));
+});
+
+exports.addExpiry = V.ah(async (req, res) => {
+  const point = await ownedPoint(req.user.id, req.params.id);
+  const b = req.body || {};
+  const amount = V.numberOrNull(b.amount, 'amount', { min: 0.01, max: 1e12 });
+  const expiryDate = V.dateOnlyOrNull(b.expiryDate, 'expiryDate');
+  if (amount == null || !expiryDate) throw V.httpError(400, 'AMOUNT_AND_DATE_REQUIRED', '請輸入到期數量與日期');
+  const row = await PointExpiry.create({
+    pointId: point.id,
+    userId: req.user.id,
+    amount,
+    expiryDate,
+    note: V.trimOrNull(b.note, 500)
+  });
+  res.status(201).json(expiryToPublic(row));
+});
+
+exports.updateExpiry = V.ah(async (req, res) => {
+  const point = await ownedPoint(req.user.id, req.params.id);
+  const row = await PointExpiry.findOne({ where: { id: V.idParam(req.params.eid) || 0, pointId: point.id } });
+  if (!row) throw V.httpError(404, 'EXPIRY_NOT_FOUND', '找不到此到期提醒');
+  const b = req.body || {};
+  if (V.has(b, 'amount')) {
+    const amount = V.numberOrNull(b.amount, 'amount', { min: 0.01, max: 1e12 });
+    if (amount == null) throw V.httpError(400, 'INVALID_AMOUNT', '請輸入到期數量');
+    row.amount = amount;
   }
-};
+  if (V.has(b, 'expiryDate')) {
+    const d = V.dateOnlyOrNull(b.expiryDate, 'expiryDate');
+    if (!d) throw V.httpError(400, 'INVALID_EXPIRY_DATE', '請輸入到期日期');
+    row.expiryDate = d;
+  }
+  if (V.has(b, 'status')) {
+    if (!['active', 'dismissed'].includes(b.status)) throw V.httpError(400, 'INVALID_STATUS', 'status 必須是 active 或 dismissed');
+    row.status = b.status;
+  }
+  if (V.has(b, 'note')) row.note = V.trimOrNull(b.note, 500);
+  await row.save();
+  res.json(expiryToPublic(row));
+});
 
-// ---------- Point Expiries ----------
+exports.deleteExpiry = V.ah(async (req, res) => {
+  const point = await ownedPoint(req.user.id, req.params.id);
+  const row = await PointExpiry.findOne({ where: { id: V.idParam(req.params.eid) || 0, pointId: point.id } });
+  if (!row) throw V.httpError(404, 'EXPIRY_NOT_FOUND', '找不到此到期提醒');
+  await row.destroy();
+  res.json({ ok: true });
+});
 
-// GET /api/points/:id/expiries
-exports.listExpiries = async (req, res, next) => {
-  try {
-    const point = await Point.findOne({
-      where: { id: req.params.id, userId: req.user.id }
-    });
-    if (!point) return res.status(404).json({ error: 'NOT_FOUND' });
+// GET /api/expiries/alerts — every active expiry reminder across points
+exports.listAlerts = V.ah(async (req, res) => {
+  const rows = await PointExpiry.findAll({
+    where: { userId: req.user.id, status: 'active' },
+    include: [{ model: Point, as: 'point', attributes: ['id', 'name', 'issuer', 'imageUrl', 'color', 'currentBalance'] }],
+    order: [['expiryDate', 'ASC']]
+  });
+  const today = E.startOfDay(new Date());
+  res.json(rows.map((r) => expiryToPublic(r, today)));
+});
 
-    const expiries = await PointExpiry.findAll({
-      where: { pointId: point.id },
-      order: [['expiryDate', 'ASC']]
-    });
-    res.json(expiries);
-  } catch (err) { next(err); }
-};
-
-// POST /api/points/:id/expiries
-exports.addExpiry = async (req, res, next) => {
-  try {
-    const point = await Point.findOne({
-      where: { id: req.params.id, userId: req.user.id }
-    });
-    if (!point) return res.status(404).json({ error: 'NOT_FOUND' });
-
-    const { amount, expiryDate, note } = req.body;
-    if (!amount || !expiryDate) return res.status(400).json({ error: 'AMOUNT_AND_DATE_REQUIRED' });
-
-    const expiry = await PointExpiry.create({
-      pointId: point.id,
-      userId: req.user.id,
-      amount: Number(amount),
-      expiryDate,
-      note: note || null
-    });
-    res.status(201).json(expiry);
-  } catch (err) { next(err); }
-};
-
-// PUT /api/points/:id/expiries/:eid
-exports.updateExpiry = async (req, res, next) => {
-  try {
-    const point = await Point.findOne({
-      where: { id: req.params.id, userId: req.user.id }
-    });
-    if (!point) return res.status(404).json({ error: 'NOT_FOUND' });
-
-    const expiry = await PointExpiry.findOne({
-      where: { id: req.params.eid, pointId: point.id }
-    });
-    if (!expiry) return res.status(404).json({ error: 'EXPIRY_NOT_FOUND' });
-
-    const { amount, expiryDate, status, note } = req.body;
-    if (amount !== undefined) expiry.amount = Number(amount);
-    if (expiryDate !== undefined) expiry.expiryDate = expiryDate;
-    if (status && ['active', 'dismissed'].includes(status)) expiry.status = status;
-    if (note !== undefined) expiry.note = note || null;
-    await expiry.save();
-    res.json(expiry);
-  } catch (err) { next(err); }
-};
-
-// DELETE /api/points/:id/expiries/:eid
-exports.deleteExpiry = async (req, res, next) => {
-  try {
-    const point = await Point.findOne({
-      where: { id: req.params.id, userId: req.user.id }
-    });
-    if (!point) return res.status(404).json({ error: 'NOT_FOUND' });
-
-    const expiry = await PointExpiry.findOne({
-      where: { id: req.params.eid, pointId: point.id }
-    });
-    if (!expiry) return res.status(404).json({ error: 'EXPIRY_NOT_FOUND' });
-    await expiry.destroy();
-    res.json({ ok: true });
-  } catch (err) { next(err); }
-};
-
-// GET /api/expiries/alerts — dashboard: all active expiry alerts for this user
-exports.listAlerts = async (req, res, next) => {
-  try {
-    const alerts = await PointExpiry.findAll({
-      where: { userId: req.user.id, status: 'active' },
-      include: [{ model: Point, as: 'point', attributes: ['id', 'name', 'issuer', 'imageUrl', 'color'] }],
-      order: [['expiryDate', 'ASC']]
-    });
-    res.json(alerts);
-  } catch (err) { next(err); }
-};
-
+exports.recalcPoint = recalcPoint;

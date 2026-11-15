@@ -1,469 +1,260 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
-<head>
-  <%- include('partials/head', { title: title }) %>
-</head>
-<body class="min-h-screen bg-slate-50 text-slate-800 pb-20 sm:pb-0">
-  <%- include('partials/nav', { active: active }) %>
+<head><%- include('partials/head') %></head>
+<body data-auth="1">
+  <%- include('partials/nav', { active }) %>
+  <header class="appbar">
+    <div class="appbar-inner">
+      <h1 class="appbar-title">回饋活動</h1>
+      <button type="button" class="icon-btn" id="aiParseBtn" aria-label="AI 解析活動文字" title="AI 解析活動文字"><svg class="i"><use href="#i-sparkles"/></svg></button>
+      <button type="button" class="icon-btn icon-btn-primary" id="newEventBtn" aria-label="新增活動" title="新增活動"><svg class="i"><use href="#i-plus"/></svg></button>
+    </div>
+  </header>
 
-  <main class="max-w-6xl mx-auto px-4 py-6 space-y-6">
-    <header class="flex items-center justify-between gap-3 flex-wrap">
-      <div>
-        <h1 class="text-2xl font-semibold">回饋活動</h1>
-        <p class="text-sm text-slate-500">標註信用卡 / 支付方式，搜尋並管理</p>
-      </div>
-      <div class="flex gap-2 flex-wrap">
-        <button id="aiKeysBtn" class="px-3 py-2 text-sm rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50" title="管理 Gemini API 金鑰">🔑 AI 金鑰</button>
-        <button id="aiParseBtn" class="px-3 py-2 text-sm rounded-lg border border-brand-300 text-brand-700 hover:bg-brand-50">AI 解析貼文</button>
-        <button id="newEventBtn" class="px-3 py-2 text-sm rounded-lg bg-brand-600 text-white hover:bg-brand-700">+ 新增活動</button>
-      </div>
-    </header>
+  <main class="page">
+    <div class="seg" id="tabs" role="tablist">
+      <button type="button" data-tab="list" aria-pressed="true">活動</button>
+      <button type="button" data-tab="audit" aria-pressed="false">核對入帳</button>
+      <button type="button" data-tab="ai" aria-pressed="false">AI 問答</button>
+    </div>
 
-    <!-- Filters -->
-    <section class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 space-y-3">
-      <!-- Search mode -->
-      <div class="flex items-center gap-2 text-xs flex-wrap">
-        <span class="text-slate-500">搜尋模式：</span>
-        <button data-mode="normal" class="mode-chip px-3 py-1 rounded-full bg-brand-600 text-white">一般搜尋</button>
-        <button data-mode="ai" class="mode-chip px-3 py-1 rounded-full border border-slate-300 text-slate-600">✨ AI 智能搜尋</button>
-        <button data-mode="rewards" class="mode-chip px-3 py-1 rounded-full border border-slate-300 text-slate-600">💰 回饋核對</button>
+    <!-- ── 活動 ── -->
+    <section id="tab-list" class="mt-3">
+      <div class="flex gap-2">
+        <div class="input-icon flex-1">
+          <svg class="i"><use href="#i-search"/></svg>
+          <input id="qInput" class="input" type="search" placeholder="搜尋活動、卡片、支付、商家" enterkeyhint="search" />
+        </div>
+        <button type="button" class="btn btn-secondary relative !px-3" id="filterBtn" aria-label="篩選與排序">
+          <svg class="i"><use href="#i-filter"/></svg>
+          <span id="filterDot" class="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-brand-600" hidden></span>
+        </button>
       </div>
-
-      <!-- Normal filters -->
-      <div id="normalFilters" class="space-y-3">
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <label class="block md:col-span-2">
-            <span class="text-xs text-slate-500">搜尋（活動 / 卡片 / 支付 / 商家）</span>
-            <input id="qInput" type="search" placeholder="例如：玉山 Pi 卡、LINE Pay 或 CAMA"
-                   class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          </label>
-          <label class="block">
-            <span class="text-xs text-slate-500">指定卡片</span>
-            <select id="cardFilter" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-              <option value="">全部</option>
-            </select>
-          </label>
-          <label class="block">
-            <span class="text-xs text-slate-500">指定支付方式</span>
-            <select id="pmFilter" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-              <option value="">全部</option>
-            </select>
-          </label>
-        </div>
-        <div class="flex items-center gap-2 text-xs">
-          <span class="text-slate-500">狀態：</span>
-          <button data-status="active" class="status-chip px-3 py-1 rounded-full bg-brand-600 text-white">進行中</button>
-          <button data-status="expired" class="status-chip px-3 py-1 rounded-full border border-slate-300 text-slate-600">已結束</button>
-          <button data-status="all" class="status-chip px-3 py-1 rounded-full border border-slate-300 text-slate-600">全部</button>
-        </div>
-        <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
-          <label class="flex items-center gap-1.5">
-            <span class="text-slate-500">分組</span>
-            <select id="groupBySelect" class="rounded-lg border border-slate-300 px-2 py-1 text-xs bg-white">
-              <option value="card">依卡片</option>
-              <option value="paymentMethod">依支付方式</option>
-              <option value="none">不分組</option>
-            </select>
-          </label>
-          <label class="flex items-center gap-1.5">
-            <span class="text-slate-500">排序</span>
-            <select id="sortBySelect" class="rounded-lg border border-slate-300 px-2 py-1 text-xs bg-white">
-              <option value="deadline">即將到期</option>
-              <option value="percentDesc">回饋% 高→低</option>
-              <option value="percentAsc">回饋% 低→高</option>
-              <option value="title">標題</option>
-            </select>
-          </label>
-        </div>
+      <div class="chips mt-3" id="statusChips">
+        <button type="button" class="chip" data-status="ongoing">進行中</button>
+        <button type="button" class="chip" data-status="upcoming">即將開始</button>
+        <button type="button" class="chip" data-status="active">未結束</button>
+        <button type="button" class="chip" data-status="expired">已結束</button>
+        <button type="button" class="chip" data-status="all">全部</button>
       </div>
-
-      <!-- AI search -->
-      <div id="aiSearchWrap" class="hidden space-y-2">
-        <label class="block">
-          <span class="text-xs text-slate-500">AI 智能搜尋（輸入消費場景 / 通路 / 商家）</span>
-          <div class="mt-1 flex gap-2">
-            <input id="aiSearchInput" type="search" placeholder="例如：Foodpanda、外送、超商、加油、訂房"
-                   class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-            <button id="aiSearchBtn" type="button"
-                    class="px-4 py-2 text-sm rounded-lg bg-brand-600 text-white hover:bg-brand-700 disabled:bg-brand-300 whitespace-nowrap">
-              <span data-state="idle">AI 搜尋</span><span data-state="loading" class="hidden">分析中…</span>
-            </button>
-          </div>
-        </label>
-        <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-500">
-          <label class="flex items-center gap-1.5">
-            <span>AI 模型</span>
-            <select id="aiModelSelect" class="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs">
-              <option value="">載入中…</option>
-            </select>
-          </label>
-          <label class="flex items-center gap-2">
-            <input id="aiWebToggle" type="checkbox" class="rounded border-slate-300" />
-            允許 AI 聯網查詢最新活動（較慢、耗用較多額度）
-          </label>
-        </div>
-        <p class="text-[11px] text-slate-400">AI 會分析你已記錄的所有進行中活動，推薦回饋最高的卡片 / 支付組合並提醒注意事項。Pro 系列分析更精準但較慢；Flash 系列回覆快、額度省。</p>
-      </div>
-
-      <!-- Rewards audit -->
-      <div id="rewardsAuditWrap" class="hidden space-y-3">
-        <p class="text-[11px] text-slate-500">依實際交易紀錄計算每個活動「應得」的回饋，可自訂計算區間，用來核對金融機構實際入帳的回饋有沒有少給。</p>
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <label class="block">
-            <span class="text-xs text-slate-500">指定卡片</span>
-            <select id="raCardFilter" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-              <option value="">全部</option>
-            </select>
-          </label>
-          <label class="block">
-            <span class="text-xs text-slate-500">指定支付方式</span>
-            <select id="raPmFilter" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-              <option value="">全部</option>
-            </select>
-          </label>
-          <label class="block md:col-span-2">
-            <span class="text-xs text-slate-500">搜尋（活動標題 / 說明）</span>
-            <input id="raQInput" type="search" placeholder="例如：CAMA"
-                   class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          </label>
-        </div>
-        <div class="flex items-center gap-2 text-xs">
-          <span class="text-slate-500">狀態：</span>
-          <button data-ra-status="active" class="ra-status-chip px-3 py-1 rounded-full bg-brand-600 text-white">進行中</button>
-          <button data-ra-status="expired" class="ra-status-chip px-3 py-1 rounded-full border border-slate-300 text-slate-600">已結束</button>
-          <button data-ra-status="all" class="ra-status-chip px-3 py-1 rounded-full border border-slate-300 text-slate-600">全部</button>
-        </div>
-        <div class="flex items-center gap-2 text-xs flex-wrap">
-          <span class="text-slate-500">計算區間：</span>
-          <button data-ra-range="cycle" class="ra-range-chip px-3 py-1 rounded-full bg-brand-600 text-white">本週期（進行中）</button>
-          <button data-ra-range="prevCycle" class="ra-range-chip px-3 py-1 rounded-full border border-slate-300 text-slate-600">上一個區間（已結算）</button>
-          <button data-ra-range="thisMonth" class="ra-range-chip px-3 py-1 rounded-full border border-slate-300 text-slate-600">本月</button>
-          <button data-ra-range="lastMonth" class="ra-range-chip px-3 py-1 rounded-full border border-slate-300 text-slate-600">上月</button>
-          <button data-ra-range="custom" class="ra-range-chip px-3 py-1 rounded-full border border-slate-300 text-slate-600">自訂區間</button>
-        </div>
-        <div id="raCustomRangeWrap" class="hidden grid grid-cols-2 gap-3">
-          <label class="block">
-            <span class="text-xs text-slate-500">起</span>
-            <input id="raFromInput" type="date" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          </label>
-          <label class="block">
-            <span class="text-xs text-slate-500">迄（不含當天，即算到前一天結束）</span>
-            <input id="raToInput" type="date" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          </label>
-        </div>
-      </div>
+      <div id="eventsList" class="mt-3 grid gap-3 md:grid-cols-2"></div>
     </section>
 
-    <!-- Results -->
-    <section id="eventsList" class="grid grid-cols-1 md:grid-cols-2 gap-3">
-      <div class="text-sm text-slate-400 col-span-full" data-loading>載入中…</div>
+    <!-- ── 核對入帳 ── -->
+    <section id="tab-audit" class="mt-3" hidden>
+      <p class="px-1 text-[13px] muted">依交易紀錄計算「應得」回饋，跟銀行實際入帳比對，看看有沒有少給。</p>
+      <div class="chips mt-3" id="rangeChips">
+        <button type="button" class="chip" data-range="cycle">本期</button>
+        <button type="button" class="chip" data-range="prevCycle">上一期（已結算）</button>
+        <button type="button" class="chip" data-range="thisMonth">本月</button>
+        <button type="button" class="chip" data-range="lastMonth">上月</button>
+        <button type="button" class="chip" data-range="custom">自訂</button>
+      </div>
+      <div id="customRange" class="mt-3 grid grid-cols-2 gap-2" hidden>
+        <label class="field"><span class="label">起</span><input type="date" class="input" id="raFrom"></label>
+        <label class="field"><span class="label">迄（含）</span><input type="date" class="input" id="raTo"></label>
+      </div>
+      <div class="card card-pad mt-3 grid grid-cols-3 gap-2 text-center" id="auditTotals">
+        <div><div class="stat-label">應得</div><div class="stat-value money" data-t="expected">—</div></div>
+        <div><div class="stat-label">已入帳</div><div class="stat-value money" data-t="received">—</div></div>
+        <div><div class="stat-label">消費</div><div class="stat-value money" data-t="spend">—</div></div>
+      </div>
+      <div id="auditList" class="mt-3 space-y-3"></div>
+    </section>
+
+    <!-- ── AI 問答 ── -->
+    <section id="tab-ai" class="mt-3" hidden>
+      <form id="aiSearchForm" class="card card-pad space-y-3">
+        <label class="field">
+          <span class="label">想刷什麼？</span>
+          <input id="aiQuery" class="input" maxlength="100" placeholder="例如：外送、加油、出國、訂房" enterkeyhint="search" required>
+          <span class="hint">AI 會讀你記錄的進行中活動來推薦。要精確試算金額，請用「刷哪張」。</span>
+        </label>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="field"><span class="label">模型</span><select id="aiModel" class="select"><option value="">載入中…</option></select></label>
+          <label class="field"><span class="label">聯網補充</span>
+            <span class="flex min-h-[46px] items-center gap-3"><input type="checkbox" id="aiWeb" class="sr-only"><span class="switch" data-for="aiWeb"></span><span class="text-sm muted">較慢</span></span>
+          </label>
+        </div>
+        <button class="btn btn-primary btn-block" id="aiSearchBtn" type="submit"><svg class="i"><use href="#i-sparkles"/></svg>詢問 AI</button>
+      </form>
+      <div id="aiResults" class="mt-3 space-y-3"></div>
     </section>
   </main>
 
-  <!-- Modal: Event form -->
-  <div id="eventModal" class="hidden fixed inset-0 z-40 bg-black/40 grid place-items-center px-3 overflow-y-auto py-6">
-    <div class="bg-white w-full min-w-0 max-w-2xl rounded-2xl shadow-xl p-5 animate-slide-up">
-      <div class="flex items-center justify-between">
-        <h3 class="text-lg font-semibold" id="eventModalTitle">新增回饋活動</h3>
-        <button type="button" data-dismiss="eventModal" class="text-slate-400 hover:text-slate-600">✕</button>
+  <!-- Filter sheet -->
+  <div class="sheet-root" id="filterSheet" hidden role="dialog" aria-modal="true" aria-label="篩選">
+    <div class="sheet-backdrop" data-close></div>
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header"><h2 class="sheet-title">篩選與排序</h2><button type="button" class="icon-btn" data-close aria-label="關閉"><svg class="i"><use href="#i-x"/></svg></button></div>
+      <div class="sheet-body space-y-4">
+        <label class="field"><span class="label">卡片</span><select class="select" id="fCard"><option value="">全部卡片</option></select></label>
+        <label class="field"><span class="label">支付方式</span><select class="select" id="fPm"><option value="">全部</option><option value="none">適用直接刷卡</option></select></label>
+        <label class="field"><span class="label">排序</span>
+          <select class="select" id="fSort">
+            <option value="deadline">快截止的在前</option>
+            <option value="remaining">還可拿最多的在前</option>
+            <option value="rate">回饋率高→低</option>
+            <option value="title">名稱</option>
+          </select>
+        </label>
+        <label class="field"><span class="label">分組</span>
+          <select class="select" id="fGroup">
+            <option value="none">不分組</option>
+            <option value="card">依卡片</option>
+            <option value="paymentMethod">依支付方式</option>
+          </select>
+        </label>
       </div>
+      <div class="sheet-footer"><button type="button" class="btn btn-secondary flex-1" id="fReset">清除</button><button type="button" class="btn btn-primary flex-1" data-close>完成</button></div>
+    </div>
+  </div>
 
-      <form id="eventForm" class="mt-3 space-y-3">
-        <input type="hidden" name="id" />
-        <label class="block">
-          <span class="text-xs text-slate-500">活動標題 <span class="text-rose-500">*</span></span>
-          <input name="title" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-        </label>
-
-        <div class="grid grid-cols-2 gap-3">
-          <label class="block">
-            <span class="text-xs text-slate-500">開始日期</span>
-            <input name="startDate" type="date" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          </label>
-          <label class="block">
-            <span class="text-xs text-slate-500">結束日期</span>
-            <input name="endDate" type="date" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          </label>
+  <!-- Event form sheet -->
+  <div class="sheet-root" id="eventSheet" hidden role="dialog" aria-modal="true" aria-labelledby="eventSheetTitle">
+    <div class="sheet-backdrop" data-close></div>
+    <div class="sheet sheet-full sheet-lg">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header"><h2 class="sheet-title" id="eventSheetTitle">新增回饋活動</h2><button type="button" class="icon-btn" data-close aria-label="關閉"><svg class="i"><use href="#i-x"/></svg></button></div>
+      <form id="eventForm" class="sheet-body space-y-4" novalidate>
+        <input type="hidden" name="id">
+        <div class="form-section">
+          <label class="field"><span class="label">活動名稱 *</span><input name="title" class="input" maxlength="255" required placeholder="例如：Pi 卡綁 LINE Pay 5%"></label>
+          <div class="grid grid-cols-2 gap-2">
+            <label class="field"><span class="label">開始日</span><input name="startDate" type="date" class="input"></label>
+            <label class="field"><span class="label">結束日</span><input name="endDate" type="date" class="input"></label>
+          </div>
+          <label class="field"><span class="label">活動網址</span><input name="sourceUrl" type="url" inputmode="url" class="input" placeholder="https://"></label>
         </div>
 
-        <!-- Cycle settings -->
-        <div class="bg-slate-50 rounded-xl p-3 space-y-2 border border-slate-200">
-          <div class="text-xs font-medium text-slate-600">🔄 週期設定</div>
-          <div class="grid grid-cols-2 gap-3">
-            <label class="block">
-              <span class="text-xs text-slate-500">週期類型</span>
-              <select name="cycleType" class="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">
-                <option value="none">無週期</option>
-                <option value="weekly">每週</option>
-                <option value="biweekly">雙週</option>
-                <option value="monthly">每月</option>
-              </select>
-            </label>
-            <label class="block" id="cycleAnchorWrap">
-              <span class="text-xs text-slate-500" id="cycleAnchorLabel">錨點日期</span>
-              <input name="cycleAnchorDay" type="number" min="1" max="31" placeholder="例: 1"
-                     class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        <div class="form-section">
+          <div class="form-section-title">回饋</div>
+          <div class="seg" id="rewardModeSeg">
+            <button type="button" data-mode="percent" aria-pressed="true">百分比 %</button>
+            <button type="button" data-mode="fixed" aria-pressed="false">固定金額</button>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <label class="field" data-show="percent"><span class="label">回饋 %</span><input name="cashbackPercent" type="number" inputmode="decimal" step="0.001" min="0" max="100" class="input" placeholder="5"></label>
+            <label class="field" data-show="fixed" hidden><span class="label">每次回饋</span><input name="cashbackFixed" type="number" inputmode="decimal" step="0.01" min="0" class="input" placeholder="50"></label>
+            <label class="field"><span class="label">回饋類型</span>
+              <select name="rewardType" class="select"><option value="cash">現金</option><option value="point">點數</option><option value="coupon">折價券</option><option value="other">其他</option></select>
             </label>
           </div>
-          <div class="text-[10px] text-slate-400" id="cycleHint">設定後活動將依週期顯示倒數</div>
+          <label class="field"><span class="label">每期回饋上限</span><input name="maxReward" type="number" inputmode="decimal" step="0.01" min="0" class="input" placeholder="不限"></label>
+          <div>
+            <label class="field"><span class="label">門檻金額</span><input name="minimumSpend" type="number" inputmode="decimal" step="0.01" min="0" class="input" placeholder="無門檻"></label>
+            <div class="seg mt-2" id="scopeSeg">
+              <button type="button" data-scope="perTransaction" aria-pressed="true">單筆滿額</button>
+              <button type="button" data-scope="cycleTotal" aria-pressed="false">本期累積滿額</button>
+            </div>
+            <span class="hint" id="scopeHint"></span>
+          </div>
         </div>
 
-        <div class="grid grid-cols-2 gap-3">
-          <label class="block">
-            <span class="text-xs text-slate-500">回饋 %</span>
-            <input name="cashbackPercent" type="number" step="0.001" min="0" max="100"
-                   class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          </label>
-          <label class="block">
-            <span class="text-xs text-slate-500">固定回饋金額 / 點數</span>
-            <input name="cashbackFixed" type="number" step="0.01" min="0"
-                   class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          </label>
-        </div>
-
-        <div class="grid grid-cols-3 gap-3">
-          <label class="block">
-            <span class="text-xs text-slate-500">回饋類型</span>
-            <select name="rewardType" class="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">
-              <option value="cash">現金回饋</option>
-              <option value="point">點數回饋</option>
-              <option value="coupon">折價券</option>
-              <option value="other">其他</option>
-            </select>
-          </label>
-          <label class="block">
-            <span class="text-xs text-slate-500">回饋上限</span>
-            <input name="maxReward" type="number" step="0.01" min="0"
-                   class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          </label>
-          <label class="block">
-            <span class="text-xs text-slate-500">最低門檻 (單筆)</span>
-            <input name="minimumSpend" type="number" step="0.01" min="0"
-                   class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          </label>
-        </div>
-
-        <div class="bg-slate-50 rounded-xl p-3 space-y-2 border border-slate-200">
-          <div class="text-xs font-medium text-slate-600">🧮 回饋計算方式</div>
-          <div class="grid grid-cols-3 gap-3">
-            <label class="block">
-              <span class="text-xs text-slate-500">金額捨入</span>
-              <select name="rewardRounding" class="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">
-                <option value="round">四捨五入（預設）</option>
-                <option value="floor">無條件捨去</option>
-              </select>
+        <div class="form-section">
+          <div class="form-section-title">重置週期</div>
+          <div class="grid grid-cols-2 gap-2">
+            <label class="field"><span class="label">週期</span>
+              <select name="cycleType" class="select"><option value="none">不重置（整個活動期間）</option><option value="monthly">每月</option><option value="weekly">每週</option><option value="biweekly">每兩週</option></select>
             </label>
-            <label class="block">
-              <span class="text-xs text-slate-500">計算方式</span>
-              <select name="rewardCalcMode" class="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">
-                <option value="aggregate">週期內加總後整筆計算（預設）</option>
-                <option value="perTransaction">每筆交易分別計算後加總</option>
-              </select>
-            </label>
-            <label class="block">
-              <span class="text-xs text-slate-500">捨入小數位數</span>
-              <select name="rewardPrecision" class="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">
-                <option value="0">整數（預設）</option>
-                <option value="1">小數點後 1 位</option>
-                <option value="2">小數點後 2 位</option>
-                <option value="3">小數點後 3 位</option>
-                <option value="4">小數點後 4 位</option>
-              </select>
+            <label class="field" id="anchorField"><span class="label" id="anchorLabel">每月幾號重置</span>
+              <select name="cycleAnchorDay" class="select"></select>
             </label>
           </div>
-          <div class="text-[10px] text-slate-400">「整筆計算」= 週期內符合資格的消費先加總，再乘一次 % 並捨入一次；「逐筆計算」= 每筆消費各自乘 % 並捨入，再加總 —— 兩種算法在有零頭金額時結果可能不同。「捨入小數位數」= 大部分活動的回饋是直接捨入成整數（例如捨入到「元」或「點」），但少數活動的規則是先算到小數點後幾位才捨入（例如「消費金額 × 回饋% 取到小數點後兩位」），此時可將此設為 2，讓四捨五入/無條件捨去套用在小數點後第 2 位而不是整數位。</div>
+          <span class="hint" id="cycleHint"></span>
         </div>
 
-        <label class="block">
-          <span class="text-xs text-slate-500">綁定卡片 (可複選)</span>
-          <div id="cardChips" class="mt-1 flex flex-wrap gap-2 min-h-[40px] border border-slate-200 rounded-lg p-2 bg-slate-50"></div>
-        </label>
+        <div class="form-section">
+          <div class="form-section-title">適用卡片與支付</div>
+          <div><span class="label">卡片（可複選）</span><div class="flex flex-wrap gap-2" id="cardPick"></div></div>
+          <div><span class="label">支付方式（不選＝只算直接刷卡）</span><div class="flex flex-wrap gap-2" id="pmPick"></div></div>
+          <label class="check" id="unspecWrap"><input type="checkbox" name="matchUnspecifiedPayment"><span class="text-sm"><b>直接刷卡也算</b><span class="hint !mt-0.5">除了上面的支付方式，沒用電子支付的交易也計入</span></span></label>
+        </div>
 
-        <label class="block">
-          <span class="text-xs text-slate-500">綁定支付方式 (可複選；不選 = 只累計未使用電子支付的交易)</span>
-          <div id="pmChips" class="mt-1 flex flex-wrap gap-2 min-h-[40px] border border-slate-200 rounded-lg p-2 bg-slate-50"></div>
-        </label>
+        <div class="form-section">
+          <div class="form-section-title">商家條件</div>
+          <label class="flex items-center justify-between gap-3"><span class="text-sm"><b>限定商家</b><span class="hint !mt-0.5">交易備註需包含其中一個關鍵字才算</span></span><input type="checkbox" name="requireMerchantMatch" id="reqMerchant" class="sr-only"><span class="switch" data-for="reqMerchant"></span></label>
+          <div id="merchantBox" hidden>
+            <textarea name="merchantKeywords" rows="3" class="textarea" placeholder="每行一個，例如&#10;CAMA&#10;全家"></textarea>
+            <button type="button" class="btn btn-tonal btn-sm mt-2" data-ai-kw="merchantKeywords"><svg class="i i-sm"><use href="#i-sparkles"/></svg>AI 整理商家清單</button>
+          </div>
+          <label class="flex items-center justify-between gap-3"><span class="text-sm"><b>排除商家</b><span class="hint !mt-0.5">包含任一關鍵字就完全不算（優先於其他條件）</span></span><input type="checkbox" name="excludeMerchantMatch" id="excMerchant" class="sr-only"><span class="switch" data-for="excMerchant"></span></label>
+          <div id="excludeBox" hidden>
+            <textarea name="excludeMerchantKeywords" rows="3" class="textarea" placeholder="每行一個，例如&#10;全聯&#10;繳費"></textarea>
+            <button type="button" class="btn btn-tonal btn-sm mt-2" data-ai-kw="excludeMerchantKeywords"><svg class="i i-sm"><use href="#i-sparkles"/></svg>AI 整理排除清單</button>
+          </div>
+        </div>
 
-        <label class="flex items-start gap-2 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-2.5">
-          <input name="matchUnspecifiedPayment" type="checkbox" class="mt-0.5 rounded border-slate-300" />
-          <span><strong>無指定</strong>：除了上面勾選的支付方式外，未使用電子支付（純刷卡）的交易也一併累計。適用於「刷實體卡或用指定電子支付都算」的活動。</span>
-        </label>
+        <div class="form-section">
+          <label class="flex items-center justify-between gap-3"><span class="text-sm"><b>需要登錄</b><span class="hint !mt-0.5">首頁會提醒你還沒登錄的活動</span></span><input type="checkbox" name="requiresRegistration" id="reqReg" class="sr-only"><span class="switch" data-for="reqReg"></span></label>
+          <label class="field" id="regDateField" hidden><span class="label">登錄日期（留空＝還沒登錄）</span><input name="registeredAt" type="date" class="input"></label>
+        </div>
 
-        <div class="bg-slate-50 rounded-xl p-3 space-y-2 border border-slate-200">
-          <label class="flex items-start gap-2 text-xs text-slate-600">
-            <input id="requireMerchantMatchInput" name="requireMerchantMatch" type="checkbox" class="mt-0.5 rounded border-slate-300" />
-            <span><strong>商家限定</strong>：只有交易的備註/卡片/支付方式包含下列關鍵字其中一項，才算入這個活動。適用於「只有特定商家有回饋」的活動（例如全額回饋僅限 CAMA 咖啡）。</span>
-          </label>
-          <div id="merchantKeywordsWrap" class="hidden space-y-2">
-            <textarea name="merchantKeywords" rows="3" placeholder="每行一個關鍵字，符合任一即算入，例如：&#10;CAMA&#10;全家"
-                      class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
-            <div class="text-[10px] text-slate-400">比對時會忽略英文大小寫與空白，交易的備註/卡片/支付方式名稱中只要出現這段文字就算符合。</div>
-
-            <div class="border-t border-slate-200 pt-2">
-              <button type="button" id="merchantAiBtn" class="text-xs text-brand-700 border border-brand-300 rounded-lg px-2 py-1 hover:bg-brand-50">✨ 用 AI 分析商家清單填入</button>
-              <div id="merchantAiBox" class="hidden mt-2 space-y-2">
-                <textarea id="merchantAiInput" rows="3" placeholder="貼上商家清單或活動說明文字，例如：全家便利商店、7-ELEVEN、萊爾富...（AI 會整理成關鍵字並加到上面清單）"
-                          class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
-                <div class="flex justify-end gap-2">
-                  <button type="button" id="merchantAiCancelBtn" class="px-2 py-1 text-xs rounded-lg border border-slate-300">取消</button>
-                  <button type="button" id="merchantAiAnalyzeBtn" class="px-2 py-1 text-xs rounded-lg bg-brand-600 text-white hover:bg-brand-700">
-                    <span data-state="idle">分析並加入清單</span><span data-state="loading" class="hidden">分析中…</span>
-                  </button>
-                </div>
-                <div id="merchantAiError" class="hidden text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-2 py-1.5"></div>
-              </div>
+        <details class="form-section">
+          <summary class="flex cursor-pointer items-center justify-between text-sm font-bold">進階：回饋怎麼算<svg class="i i-sm faint"><use href="#i-chevron-down"/></svg></summary>
+          <div class="mt-3 space-y-3">
+            <label class="field"><span class="label">計算方式</span><select name="rewardCalcMode" class="select"><option value="aggregate">本期消費加總後一次計算（多數活動）</option><option value="perTransaction">每筆分別計算後加總</option></select></label>
+            <div class="grid grid-cols-2 gap-2">
+              <label class="field"><span class="label">捨入</span><select name="rewardRounding" class="select"><option value="round">四捨五入</option><option value="floor">無條件捨去</option></select></label>
+              <label class="field"><span class="label">算到小數第幾位</span><select name="rewardPrecision" class="select"><option value="0">整數</option><option value="1">1 位</option><option value="2">2 位</option><option value="3">3 位</option></select></label>
             </div>
           </div>
+        </details>
+
+        <div class="form-section">
+          <label class="field"><span class="label">備註 / 注意事項</span><textarea name="note" rows="2" class="textarea" placeholder="例如：名額 10 萬名、需綁定帳戶"></textarea></label>
+          <label class="field"><span class="label">活動原文</span><textarea name="description" rows="3" class="textarea"></textarea></label>
         </div>
-
-        <div class="bg-slate-50 rounded-xl p-3 space-y-2 border border-slate-200">
-          <label class="flex items-start gap-2 text-xs text-slate-600">
-            <input id="excludeMerchantMatchInput" name="excludeMerchantMatch" type="checkbox" class="mt-0.5 rounded border-slate-300" />
-            <span><strong>排除商家</strong>：只要交易的備註/卡片/支付方式包含下列關鍵字其中一項，就<strong>完全不算入</strong>這個活動。此判斷優先於最低門檻等條件。適用於「排除非一般消費」的活動（例如排除全聯／超商／繳費）。</span>
-          </label>
-          <div id="excludeMerchantKeywordsWrap" class="hidden space-y-2">
-            <textarea name="excludeMerchantKeywords" rows="3" placeholder="每行一個關鍵字，符合任一即排除，例如：&#10;全聯&#10;繳費"
-                      class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
-            <div class="text-[10px] text-slate-400">比對時會忽略英文大小寫與空白，交易的備註/卡片/支付方式名稱中只要出現這段文字就會被排除。</div>
-
-            <div class="border-t border-slate-200 pt-2">
-              <button type="button" id="excludeMerchantAiBtn" class="text-xs text-brand-700 border border-brand-300 rounded-lg px-2 py-1 hover:bg-brand-50">✨ 用 AI 分析排除清單填入</button>
-              <div id="excludeMerchantAiBox" class="hidden mt-2 space-y-2">
-                <textarea id="excludeMerchantAiInput" rows="3" placeholder="貼上要排除的商家清單或活動說明文字，例如：不含全聯、超商、悠遊卡加值、水電瓦斯繳費...（AI 會整理成關鍵字並加到上面清單）"
-                          class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
-                <div class="flex justify-end gap-2">
-                  <button type="button" id="excludeMerchantAiCancelBtn" class="px-2 py-1 text-xs rounded-lg border border-slate-300">取消</button>
-                  <button type="button" id="excludeMerchantAiAnalyzeBtn" class="px-2 py-1 text-xs rounded-lg bg-brand-600 text-white hover:bg-brand-700">
-                    <span data-state="idle">分析並加入清單</span><span data-state="loading" class="hidden">分析中…</span>
-                  </button>
-                </div>
-                <div id="excludeMerchantAiError" class="hidden text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-2 py-1.5"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <label class="block">
-          <span class="text-xs text-slate-500">原文連結</span>
-          <input name="sourceUrl" type="url" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-        </label>
-
-        <label class="block">
-          <span class="text-xs text-slate-500">活動原文 / 備註</span>
-          <textarea name="description" rows="3" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
-        </label>
-
-        <div id="eventFormError" class="hidden text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2"></div>
-
-        <div class="flex justify-end gap-2 pt-1">
-          <button type="button" data-dismiss="eventModal" class="px-3 py-2 text-sm rounded-lg border border-slate-300">取消</button>
-          <button id="deleteEventBtn" type="button" class="hidden px-3 py-2 text-sm rounded-lg border border-rose-300 text-rose-600">刪除</button>
-          <button type="submit" class="px-3 py-2 text-sm rounded-lg bg-brand-600 text-white hover:bg-brand-700">
-            <span data-state="idle">儲存</span><span data-state="loading" class="hidden">儲存中…</span>
-          </button>
-        </div>
+        <div class="error-box" id="eventFormError" hidden></div>
       </form>
-    </div>
-  </div>
-
-  <!-- Modal: AI parser -->
-  <div id="aiModal" class="hidden fixed inset-0 z-40 bg-black/40 grid place-items-center px-3">
-    <div class="bg-white w-full min-w-0 max-w-xl rounded-2xl shadow-xl p-5 animate-slide-up">
-      <div class="flex items-center justify-between">
-        <h3 class="text-lg font-semibold">AI 智能活動解析</h3>
-        <button type="button" data-dismiss="aiModal" class="text-slate-400 hover:text-slate-600">✕</button>
-      </div>
-      <p class="text-xs text-slate-500 mt-1">貼上活動說明純文字，由 Gemini 解析欄位，再點「套用」帶入新增表單。</p>
-      <label class="block mt-3">
-        <span class="text-xs text-slate-500">AI 模型</span>
-        <select id="aiParseModel" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
-          <option value="">載入中…</option>
-        </select>
-      </label>
-      <textarea id="aiInput" rows="8" placeholder="例如：玉山 Pi 卡 5/1-7/31 LINE Pay 滿 200 享 5% 回饋，每月上限 NT$300..."
-                class="mt-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
-      <div id="aiPreview" class="hidden mt-3 text-xs bg-slate-50 border border-slate-200 rounded-lg p-3 max-h-60 overflow-auto whitespace-pre-wrap"></div>
-      <div id="aiError" class="hidden mt-2 text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2"></div>
-      <div class="flex justify-end gap-2 mt-3">
-        <button type="button" data-dismiss="aiModal" class="px-3 py-2 text-sm rounded-lg border border-slate-300">關閉</button>
-        <button id="aiAnalyzeBtn" type="button" class="px-3 py-2 text-sm rounded-lg border border-brand-300 text-brand-700 hover:bg-brand-50">
-          <span data-state="idle">解析</span><span data-state="loading" class="hidden">解析中…</span>
-        </button>
-        <button id="aiApplyBtn" type="button" disabled
-                class="px-3 py-2 text-sm rounded-lg bg-brand-600 text-white hover:bg-brand-700 disabled:bg-brand-300">套用到表單</button>
+      <div class="sheet-footer">
+        <button type="button" class="btn btn-danger !px-3" id="deleteEventBtn" hidden aria-label="刪除"><svg class="i"><use href="#i-trash"/></svg></button>
+        <button type="button" class="btn btn-secondary flex-1" data-close>取消</button>
+        <button type="submit" form="eventForm" class="btn btn-primary flex-[2]" id="saveEventBtn">儲存</button>
       </div>
     </div>
   </div>
 
-  <!-- Modal: AI keys -->
-  <div id="aiKeysModal" class="hidden fixed inset-0 z-40 bg-black/40 grid place-items-center px-3 overflow-y-auto py-6">
-    <div class="bg-white w-full min-w-0 max-w-lg rounded-2xl shadow-xl p-5 animate-slide-up">
-      <div class="flex items-center justify-between">
-        <h3 class="text-lg font-semibold">AI 金鑰管理</h3>
-        <button type="button" data-dismiss="aiKeysModal" class="text-slate-400 hover:text-slate-600">✕</button>
-      </div>
-      <p class="text-xs text-slate-500 mt-1">儲存你的 Gemini API 金鑰；可新增多把並指定當前使用的金鑰。金鑰會以 AES-256-GCM 加密後存入資料庫，前端只會看到頭尾片段。</p>
-
-      <ul id="aiKeysList" class="mt-4 space-y-2"></ul>
-      <div id="aiKeysEmpty" class="hidden text-xs text-slate-400 mt-3">尚未儲存任何金鑰；新增一把後即可使用 AI 功能。</div>
-      <div id="aiKeysError" class="hidden mt-2 text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2"></div>
-
-      <form id="aiKeyAddForm" class="mt-5 border-t border-slate-100 pt-4 space-y-3">
-        <div class="text-xs font-semibold text-slate-600">＋ 新增金鑰</div>
-        <label class="block">
-          <span class="text-xs text-slate-500">名稱</span>
-          <input name="name" required maxlength="120" placeholder="例：個人 Gemini"
-                 class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-        </label>
-        <label class="block">
-          <span class="text-xs text-slate-500">API Key</span>
-          <input name="key" type="password" required autocomplete="off" spellcheck="false" placeholder="AIza…"
-                 class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono" />
-        </label>
-        <label class="flex items-center gap-2 text-xs text-slate-500">
-          <input name="makeActive" type="checkbox" checked class="rounded border-slate-300" />
-          新增後設為使用中
-        </label>
-        <div id="aiKeyAddError" class="hidden text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2"></div>
-        <div class="flex justify-end gap-2">
-          <button type="button" data-dismiss="aiKeysModal" class="px-3 py-2 text-sm rounded-lg border border-slate-300">關閉</button>
-          <button type="submit" class="px-3 py-2 text-sm rounded-lg bg-brand-600 text-white hover:bg-brand-700">
-            <span data-state="idle">新增金鑰</span><span data-state="loading" class="hidden">儲存中…</span>
-          </button>
+  <!-- Receipt sheet -->
+  <div class="sheet-root" id="receiptSheet" hidden role="dialog" aria-modal="true" aria-labelledby="receiptTitle">
+    <div class="sheet-backdrop" data-close></div>
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header"><h2 class="sheet-title" id="receiptTitle">記錄實際入帳</h2><button type="button" class="icon-btn" data-close aria-label="關閉"><svg class="i"><use href="#i-x"/></svg></button></div>
+      <form id="receiptForm" class="sheet-body space-y-3" novalidate>
+        <input type="hidden" name="eventId"><input type="hidden" name="rid">
+        <div class="rounded-xl bg-slate-50 p-3 text-sm dark:bg-slate-800/60" id="receiptInfo"></div>
+        <label class="field"><span class="label">實際入帳金額 *</span><input name="receivedAmount" type="number" inputmode="decimal" step="0.01" min="0" class="input input-lg money" required></label>
+        <label class="field"><span class="label">入帳日</span><input name="receivedDate" type="date" class="input"></label>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="field"><span class="label">核對期間起</span><input name="periodStart" type="date" class="input"></label>
+          <label class="field"><span class="label">迄（含）</span><input name="periodEnd" type="date" class="input"></label>
         </div>
+        <label class="field"><span class="label">備註</span><input name="note" class="input" maxlength="500" placeholder="例如：11 月帳單折抵"></label>
+        <div class="error-box" id="receiptError" hidden></div>
       </form>
-    </div>
-  </div>
-
-  <!-- Modal: Event Details -->
-  <div id="eventDetailsModal" class="hidden fixed inset-0 z-40 bg-black/40 grid place-items-center px-3">
-    <div class="bg-white w-full min-w-0 max-w-md rounded-2xl shadow-xl p-5 animate-slide-up max-h-[90vh] flex flex-col">
-      <div class="flex justify-between items-start mb-4 gap-3">
-        <h3 class="text-lg font-semibold truncate min-w-0" id="eventDetailsTitle">活動詳情</h3>
-        <button data-dismiss="eventDetailsModal" class="flex-shrink-0 text-slate-400 hover:text-slate-600">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-        </button>
-      </div>
-      <div class="overflow-y-auto flex-1 min-w-0 space-y-4" id="eventDetailsContent">
-        <!-- Content injected via JS -->
-      </div>
-      <div class="mt-5 pt-4 border-t flex justify-end gap-2 shrink-0">
-        <button id="eventDetailsEditBtn" type="button" class="px-4 py-2 text-sm rounded-lg bg-brand-600 text-white hover:bg-brand-700">前往編輯</button>
+      <div class="sheet-footer">
+        <button type="button" class="btn btn-danger !px-3" id="deleteReceiptBtn" hidden aria-label="刪除"><svg class="i"><use href="#i-trash"/></svg></button>
+        <button type="button" class="btn btn-secondary flex-1" data-close>取消</button>
+        <button type="submit" form="receiptForm" class="btn btn-primary flex-[2]">儲存</button>
       </div>
     </div>
   </div>
 
-  <!-- Modal: Reward detail (per-transaction breakdown) -->
-  <div id="rewardDetailModal" class="hidden fixed inset-0 z-40 bg-black/40 grid place-items-center px-3">
-    <div class="bg-white w-full min-w-0 max-w-lg rounded-2xl shadow-xl p-5 animate-slide-up max-h-[90vh] flex flex-col">
-      <div class="flex justify-between items-start mb-3 gap-3">
-        <h3 class="text-base font-semibold truncate min-w-0" id="rewardDetailTitle">回饋明細</h3>
-        <button data-dismiss="rewardDetailModal" class="flex-shrink-0 text-slate-400 hover:text-slate-600">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-        </button>
+  <!-- AI parse sheet -->
+  <div class="sheet-root" id="aiParseSheet" hidden role="dialog" aria-modal="true" aria-label="AI 解析活動">
+    <div class="sheet-backdrop" data-close></div>
+    <div class="sheet sheet-lg">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header"><h2 class="sheet-title">AI 解析活動文字</h2><button type="button" class="icon-btn" data-close aria-label="關閉"><svg class="i"><use href="#i-x"/></svg></button></div>
+      <div class="sheet-body space-y-3">
+        <p class="text-sm muted">貼上銀行或支付的活動說明，AI 會幫你填好表單，存檔前可以再檢查修改。</p>
+        <textarea id="aiParseInput" rows="8" class="textarea" placeholder="例如：玉山 Pi 卡 10/1-12/31 綁定 LINE Pay 單筆滿 200 享 5% 回饋，每月上限 300 元，需登錄"></textarea>
+        <label class="field"><span class="label">模型</span><select id="aiParseModel" class="select"><option value="">載入中…</option></select></label>
+        <div class="error-box" id="aiParseError" hidden></div>
       </div>
-      <div class="overflow-y-auto flex-1 min-w-0" id="rewardDetailBody"></div>
-      <div class="mt-3 pt-3 border-t text-sm font-medium text-slate-700 shrink-0" id="rewardDetailTotal"></div>
+      <div class="sheet-footer"><button type="button" class="btn btn-secondary flex-1" data-close>取消</button><button type="button" class="btn btn-primary flex-[2]" id="aiParseRun"><svg class="i"><use href="#i-sparkles"/></svg>解析並填入</button></div>
     </div>
   </div>
 

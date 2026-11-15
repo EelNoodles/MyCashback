@@ -16,6 +16,7 @@ const FcmToken = require('./FcmToken')(sequelize, DataTypes);
 const AiApiKey = require('./AiApiKey')(sequelize, DataTypes);
 const CardTransaction = require('./CardTransaction')(sequelize, DataTypes);
 const CardTransactionApiKey = require('./CardTransactionApiKey')(sequelize, DataTypes);
+const RewardReceipt = require('./RewardReceipt')(sequelize, DataTypes);
 
 // ---------- Associations ----------
 
@@ -66,6 +67,12 @@ CardTransaction.belongsTo(PaymentMethod, { foreignKey: 'paymentMethodId', as: 'p
 User.hasMany(CardTransactionApiKey, { foreignKey: 'userId', onDelete: 'CASCADE' });
 CardTransactionApiKey.belongsTo(User, { foreignKey: 'userId' });
 
+// CashbackEvent 1 -> N RewardReceipt
+User.hasMany(RewardReceipt, { foreignKey: 'userId', onDelete: 'CASCADE' });
+RewardReceipt.belongsTo(User, { foreignKey: 'userId' });
+CashbackEvent.hasMany(RewardReceipt, { foreignKey: 'eventId', as: 'receipts', onDelete: 'CASCADE' });
+RewardReceipt.belongsTo(CashbackEvent, { foreignKey: 'eventId', as: 'event' });
+
 // CashbackEvent <-> Card (M:N) via EventCard
 CashbackEvent.belongsToMany(Card, {
   through: EventCard,
@@ -109,5 +116,6 @@ module.exports = {
   FcmToken,
   AiApiKey,
   CardTransaction,
-  CardTransactionApiKey
+  CardTransactionApiKey,
+  RewardReceipt
 };

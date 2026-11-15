@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head><%- include('partials/head') %></head>
+<body data-auth="1">
+  <%- include('partials/nav', { active }) %>
+  <header class="appbar">
+    <div class="appbar-inner"><h1 class="appbar-title">設定</h1></div>
+  </header>
+
+  <main class="page">
+    <section class="card overflow-hidden">
+      <div class="list">
+        <div class="row">
+          <span class="avatar !rounded-full bg-gradient-to-br from-brand-500 to-indigo-600"><svg class="i"><use href="#i-user"/></svg></span>
+          <span class="min-w-0 flex-1"><span class="block truncate font-semibold"><%= (typeof currentUser !== 'undefined' && currentUser) ? (currentUser.email || currentUser.displayName) : '' %></span><span class="block text-[12px] muted">已登入</span></span>
+          <button type="button" class="btn btn-secondary btn-sm" data-logout><svg class="i i-sm"><use href="#i-logout"/></svg>登出</button>
+        </div>
+      </div>
+    </section>
+
+    <h2 class="section-title">資料</h2>
+    <section class="card overflow-hidden">
+      <div class="list">
+        <a class="row row-tap" href="<%= url('/tags') %>"><span class="grid h-9 w-9 place-items-center rounded-lg bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300"><svg class="i"><use href="#i-card"/></svg></span><span class="flex-1 font-medium">卡片與支付方式</span><span class="text-sm muted" id="tagCount"></span><svg class="i i-sm faint"><use href="#i-chevron-right"/></svg></a>
+        <a class="row row-tap" href="<%= url('/transactions/map') %>"><span class="grid h-9 w-9 place-items-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300"><svg class="i"><use href="#i-map"/></svg></span><span class="flex-1 font-medium">消費地圖</span><svg class="i i-sm faint"><use href="#i-chevron-right"/></svg></a>
+      </div>
+    </section>
+
+    <h2 class="section-title"><span>推播通知</span></h2>
+    <section class="card card-pad">
+      <div class="flex items-start gap-3">
+        <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300"><svg class="i"><use href="#i-bell"/></svg></span>
+        <div class="min-w-0 flex-1">
+          <div class="font-medium">每日 21:00 提醒</div>
+          <div class="text-[13px] muted">點數即將到期、活動快結束但還沒拿滿、本期即將重置、還沒登錄的活動</div>
+          <div class="mt-1 text-[13px]" id="pushStatus"></div>
+        </div>
+      </div>
+      <button type="button" class="btn btn-secondary btn-block mt-3" id="pushBtn">在這台裝置開啟推播</button>
+    </section>
+
+    <h2 class="section-title"><span>API 金鑰（外部串接）</span><a href="<%= url('/developers') %>">串接文件</a></h2>
+    <section class="card card-pad">
+      <p class="text-[13px] muted">讓記帳 App、捷徑或自動化工具回報交易、查詢「刷哪張」。一把金鑰可同時用於寫入與查詢。</p>
+      <div id="newToken" class="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100" hidden>
+        <div class="font-semibold">金鑰已建立，請立即複製 — 關閉後無法再查看</div>
+        <code class="mt-2 block break-all rounded-lg bg-white/70 p-2 font-mono text-[12px] dark:bg-black/30" id="newTokenValue"></code>
+        <button type="button" class="btn btn-success btn-sm mt-2" id="copyToken"><svg class="i i-sm"><use href="#i-copy"/></svg>複製金鑰</button>
+      </div>
+      <div id="apiKeys" class="mt-3"></div>
+      <form id="apiKeyForm" class="mt-3 flex gap-2"><input name="name" class="input flex-1" maxlength="120" placeholder="金鑰名稱，例如：記帳 App" required><button class="btn btn-primary" type="submit">建立</button></form>
+    </section>
+
+    <h2 class="section-title"><span>AI 金鑰（Gemini）</span></h2>
+    <section class="card card-pad">
+      <p class="text-[13px] muted">用於「AI 解析活動」與「AI 問答」。金鑰以 AES-256-GCM 加密儲存，只顯示頭尾。</p>
+      <div id="aiKeys" class="mt-3"></div>
+      <form id="aiKeyForm" class="mt-3 space-y-2">
+        <input name="name" class="input" maxlength="120" placeholder="名稱，例如：個人 Gemini" required>
+        <input name="key" class="input font-mono" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…" required>
+        <button class="btn btn-primary btn-block" type="submit">新增並設為使用中</button>
+      </form>
+    </section>
+
+    <h2 class="section-title">說明</h2>
+    <section class="card overflow-hidden">
+      <div class="list">
+        <a class="row row-tap" href="<%= url('/developers') %>"><span class="grid h-9 w-9 place-items-center rounded-lg bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"><svg class="i"><use href="#i-code"/></svg></span><span class="flex-1 font-medium">API 串接文件</span><svg class="i i-sm faint"><use href="#i-chevron-right"/></svg></a>
+        <div class="row"><span class="grid h-9 w-9 place-items-center rounded-lg bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"><svg class="i"><use href="#i-info"/></svg></span><span class="flex-1 text-sm muted">加入主畫面即可像 App 一樣使用（iPhone：分享 → 加入主畫面）</span></div>
+      </div>
+    </section>
+  </main>
+
+  <%- include('partials/footer') %>
+  <script src="<%= asset('/js/settings.js') %>"></script>
+</body>
+</html>

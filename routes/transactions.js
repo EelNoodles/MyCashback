@@ -5,14 +5,14 @@ const ctrl = require('../controllers/transactionController');
 
 const router = express.Router();
 
-// API-key management for the ingest endpoint — declared before "/:id" so
-// "api-keys" is never swallowed by the numeric id route.
+// Static paths before "/:id".
 router.get('/api-keys', ctrl.listApiKeys);
 router.post('/api-keys', ctrl.createApiKey);
 router.put('/api-keys/:keyId', ctrl.updateApiKey);
 router.delete('/api-keys/:keyId', ctrl.removeApiKey);
 
 router.get('/locations', ctrl.listLocations);
+router.get('/stats', ctrl.stats);
 
 router.get('/', ctrl.list);
 router.post('/', ctrl.create);

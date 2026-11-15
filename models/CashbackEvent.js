@@ -35,6 +35,23 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: true,
       comment: '回饋門檻 (例如單筆滿 200)'
     },
+    minimumSpendScope: {
+      type: DataTypes.ENUM('perTransaction', 'cycleTotal'),
+      allowNull: false,
+      defaultValue: 'perTransaction',
+      comment: '門檻計算方式：perTransaction=單筆滿額才算 (預設), cycleTotal=週期內累積滿額後整期才有回饋'
+    },
+    requiresRegistration: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment: '活動是否需要登錄才有回饋'
+    },
+    registeredAt: {
+      type: DataTypes.DATEONLY,
+      allowNull: true,
+      comment: '使用者完成登錄的日期；null 代表尚未登錄'
+    },
     sourceUrl: { type: DataTypes.STRING(1000), allowNull: true },
     cycleType: {
       type: DataTypes.ENUM('none', 'weekly', 'biweekly', 'monthly'),

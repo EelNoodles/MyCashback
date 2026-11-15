@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head><%- include('partials/head') %></head>
+<body data-auth="1">
+  <%- include('partials/nav', { active }) %>
+  <header class="appbar">
+    <div class="appbar-inner">
+      <div class="min-w-0 flex-1">
+        <span class="appbar-sub">依本期已刷金額、上限與門檻即時計算</span>
+        <h1 class="appbar-title leading-tight">刷哪張最划算</h1>
+      </div>
+    </div>
+  </header>
+
+  <main class="page">
+    <form id="recForm" class="card card-pad space-y-4" autocomplete="off" onsubmit="return false">
+      <label class="field">
+        <span class="label">消費金額</span>
+        <div class="relative">
+          <span class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-xl font-bold text-slate-400">NT$</span>
+          <input id="amount" name="amount" class="input input-lg pl-16 money" type="number" inputmode="decimal" min="0" step="any" placeholder="0" enterkeyhint="search" required />
+        </div>
+      </label>
+      <div class="chips" id="amountChips">
+        <button type="button" class="chip" data-amt="100">100</button>
+        <button type="button" class="chip" data-amt="300">300</button>
+        <button type="button" class="chip" data-amt="500">500</button>
+        <button type="button" class="chip" data-amt="1000">1,000</button>
+        <button type="button" class="chip" data-amt="3000">3,000</button>
+        <button type="button" class="chip" data-amt="10000">10,000</button>
+      </div>
+      <label class="field">
+        <span class="label">商家（選填）</span>
+        <div class="input-icon">
+          <svg class="i"><use href="#i-store"/></svg>
+          <input id="merchant" name="merchant" class="input" list="merchantList" placeholder="例如：全聯、7-ELEVEN、momo" enterkeyhint="search" maxlength="120" />
+        </div>
+        <datalist id="merchantList"></datalist>
+        <span class="hint">有些活動限定或排除特定商家，填了會更準確</span>
+      </label>
+      <div>
+        <span class="label">付款方式</span>
+        <div class="chips" id="pmChips"><button type="button" class="chip" aria-pressed="true" data-pm="">全部比較</button></div>
+      </div>
+    </form>
+
+    <section id="results" class="mt-4 space-y-3" aria-live="polite"></section>
+  </main>
+
+  <%- include('partials/footer') %>
+  <script src="<%= asset('/js/recommend.js') %>"></script>
+</body>
+</html>

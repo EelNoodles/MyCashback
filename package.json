@@ -1,19 +1,26 @@
 {
   "name": "mycashback",
-  "version": "1.0.0",
-  "description": "Points & Cashback Hub - A monolithic Node.js + Express application for managing points and cashback events",
+  "version": "2.0.0",
+  "description": "MyCashback — mobile-first credit card cashback tracker: best-card recommendations, cycle-aware reward math, reward reconciliation, points and an external API",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "concurrently \"npm:watch:css\" \"nodemon server.js\"",
+    "dev:demo": "node test/support/devServer.js",
     "build:css": "tailwindcss -i ./public/css/tailwind.css -o ./public/css/styles.css --minify",
     "watch:css": "tailwindcss -i ./public/css/tailwind.css -o ./public/css/styles.css --watch",
     "build:icons": "node scripts/generate-icons.js",
     "build": "npm run build:icons && npm run build:css",
+    "db:migrate": "node scripts/migrate.js",
+    "docs:api": "node scripts/gen-api-docs.js",
+    "docs:check": "node scripts/gen-api-docs.js --check",
+    "test": "node --test --test-concurrency=1 \"test/unit/**/*.test.js\" \"test/integration/**/*.test.js\"",
+    "test:unit": "node --test \"test/unit/**/*.test.js\"",
+    "test:integration": "node --test --test-concurrency=1 \"test/integration/**/*.test.js\"",
+    "test:e2e": "node --test \"test/e2e/**/*.test.js\"",
     "pm2:start": "pm2 start ecosystem.config.js",
     "pm2:stop": "pm2 stop ecosystem.config.js",
-    "pm2:reload": "pm2 reload ecosystem.config.js",
-    "db:migrate": "node scripts/migrate.js"
+    "pm2:reload": "pm2 reload ecosystem.config.js"
   },
   "keywords": [
     "points",

@@ -1,409 +1,267 @@
 (function () {
   'use strict';
   const A = window.App;
+  const { esc, icon } = A;
+  const F = A.fmt;
+  const $ = (id) => document.getElementById(id);
 
-  const txnList = document.getElementById('txnList');
-  const pager = document.getElementById('pager');
-  const qInput = document.getElementById('qInput');
-  const cardFilter = document.getElementById('cardFilter');
-  const pmFilter = document.getElementById('pmFilter');
-  const sourceFilter = document.getElementById('sourceFilter');
-  const fromInput = document.getElementById('fromInput');
-  const toInput = document.getElementById('toInput');
-  const rangePresets = document.getElementById('rangePresets');
-  const rangeError = document.getElementById('rangeError');
-  const newTxnBtn = document.getElementById('newTxnBtn');
-  const apiKeysBtn = document.getElementById('apiKeysBtn');
-
-  const txnForm = document.getElementById('txnForm');
-  const txnFormError = document.getElementById('txnFormError');
-  const txnModalTitle = document.getElementById('txnModalTitle');
-  const deleteTxnBtn = document.getElementById('deleteTxnBtn');
-
-  const apiKeysList = document.getElementById('apiKeysList');
-  const apiKeysEmpty = document.getElementById('apiKeysEmpty');
-  const apiKeysError = document.getElementById('apiKeysError');
-  const newTokenBox = document.getElementById('newTokenBox');
-  const newTokenValue = document.getElementById('newTokenValue');
-  const copyTokenBtn = document.getElementById('copyTokenBtn');
-  const apiKeyAddForm = document.getElementById('apiKeyAddForm');
-  const apiKeyAddError = document.getElementById('apiKeyAddError');
-
-  const SOURCE_LABELS = { api: 'API 回報', manual: '手動' };
-
-  let state = {
-    cards: [],
-    pms: [],
-    q: '',
-    cardId: '',
-    pmId: '',
-    source: '',
-    from: '',
-    to: '',
-    page: 1,
-    pageSize: 10
+  const params = new URLSearchParams(location.search);
+  const state = {
+    q: '', range: '', from: '', to: '', cardId: '', pmId: '', minAmount: '', maxAmount: '', source: '',
+    page: 1, pageSize: 30, items: [], total: 0, seq: 0,
+    cards: [], pms: [],
+    pick: { card: null, pm: null }
   };
 
-  // Bumped on every list request so a slow, stale response (e.g. from a
-  // filter the user has since changed) never overwrites a newer one.
-  let loadSeq = 0;
+  const RANGE_LABEL = { '': '全部交易', thisMonth: '本月', lastMonth: '上月', last30: '近 30 天', custom: '自訂期間' };
 
-  function debounce(fn, ms) {
-    let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+  function rangeDates(range) {
+    const n = new Date();
+    if (range === 'thisMonth') return [new Date(n.getFullYear(), n.getMonth(), 1), new Date(n.getFullYear(), n.getMonth() + 1, 0)];
+    if (range === 'lastMonth') return [new Date(n.getFullYear(), n.getMonth() - 1, 1), new Date(n.getFullYear(), n.getMonth(), 0)];
+    if (range === 'last30') return [new Date(n.getFullYear(), n.getMonth(), n.getDate() - 29), n];
+    return null;
+  }
+  function dayStartIso(v) { const [y, m, d] = v.split('-').map(Number); return new Date(y, m - 1, d).toISOString(); }
+  function dayEndIso(v) { const [y, m, d] = v.split('-').map(Number); return new Date(y, m - 1, d, 23, 59, 59, 999).toISOString(); }
+
+  function query() {
+    const qs = new URLSearchParams({ page: state.page, pageSize: state.pageSize });
+    if (state.q) qs.set('q', state.q);
+    if (state.cardId) qs.set('cardId', state.cardId);
+    if (state.pmId) qs.set('paymentMethodId', state.pmId);
+    if (state.source) qs.set('source', state.source);
+    if (state.minAmount) qs.set('minAmount', state.minAmount);
+    if (state.maxAmount) qs.set('maxAmount', state.maxAmount);
+    if (state.from) qs.set('from', dayStartIso(state.from));
+    if (state.to) qs.set('to', dayEndIso(state.to));
+    return qs;
   }
 
-  function escapeHtml(s) {
-    return String(s == null ? '' : s)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+  function txnRow(t) {
+    const events = (t.matchedEvents || []).map((ev) => `<span class="badge badge-green">${icon('gift', 'i-sm')}${esc(ev.title)}${ev.estimatedReward ? ` ≈${F.num(ev.estimatedReward)}` : ''}</span>`).join('');
+    return `<button type="button" class="row row-tap w-full text-left" data-txn="${t.id}">
+      ${A.avatar(t.note || (t.card && t.card.name) || '?', null, '!h-10 !w-10 !rounded-full !text-xs')}
+      <span class="min-w-0 flex-1">
+        <span class="block truncate text-[15px] font-semibold">${esc(t.note || '（未填商家）')}</span>
+        <span class="mt-0.5 flex flex-wrap items-center gap-1 text-[12px] muted">${esc(t.card ? t.card.name : '已刪除的卡片')}${t.paymentMethod ? ` · ${esc(t.paymentMethod.name)}` : ''} · ${F.time(t.transactionAt)}${t.source === 'api' ? ' · API' : ''}${t.latitude != null ? ` ${icon('pin', 'i-sm !h-3 !w-3')}` : ''}</span>
+        ${events ? `<span class="mt-1.5 flex flex-wrap gap-1">${events}</span>` : ''}
+      </span>
+      <span class="shrink-0 text-right text-[15px] font-bold money">${F.money(t.amount)}</span>
+    </button>`;
   }
 
-  // <input type="datetime-local"> wants "YYYY-MM-DDTHH:mm" in local time.
-  function toLocalInputValue(iso) {
-    const d = iso ? new Date(iso) : new Date();
-    const pad = (n) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  }
-
-  // <input type="date"> wants "YYYY-MM-DD" in local time.
-  function toDateInputValue(d) {
-    const pad = (n) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  }
-
-  // Date inputs are whole local days: "from" starts at 00:00:00.000 and "to"
-  // ends at 23:59:59.999, sent as ISO so the server compares in UTC correctly.
-  function dayBoundaryIso(value, endOfDay) {
-    const [y, m, d] = value.split('-').map(Number);
-    const dt = endOfDay ? new Date(y, m - 1, d, 23, 59, 59, 999) : new Date(y, m - 1, d);
-    return dt.toISOString();
-  }
-
-  // ─── Loaders ───
-  async function loadTags() {
-    const [cards, pms] = await Promise.all([
-      A.jsonFetch(A.api('/tags/cards')),
-      A.jsonFetch(A.api('/tags/payment-methods'))
-    ]);
-    state.cards = cards;
-    state.pms = pms;
-
-    cardFilter.innerHTML = '<option value="">全部</option>'
-      + cards.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
-    pmFilter.innerHTML = '<option value="">全部</option><option value="none">未使用電子支付</option>'
-      + pms.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
-
-    txnForm.cardId.innerHTML = cards.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
-    txnForm.paymentMethodId.innerHTML = '<option value="">未使用電子支付</option>'
-      + pms.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
-  }
-
-  function rewardLabel(ev) {
-    if (ev.cashbackPercent != null) {
-      return `${ev.cashbackPercent}% 回饋` + (ev.maxReward != null ? `，上限 NT$${A.fmtNumber(ev.maxReward)}` : '');
-    }
-    if (ev.cashbackFixed != null) {
-      return `+${A.fmtNumber(ev.cashbackFixed)}` + (ev.maxReward != null ? `，上限 NT$${A.fmtNumber(ev.maxReward)}` : '');
-    }
-    return '';
-  }
-
-  // Card-based row (not a <table>) so it stays readable on a phone screen:
-  // the card used and payment method are shown as clear badges up top, and
-  // matched cashback campaigns as chips below, instead of cramming everything
-  // into narrow table columns that force horizontal scrolling.
-  function txnCardEl(t) {
-    const div = document.createElement('div');
-    div.className = 'px-4 py-3 hover:bg-slate-50 cursor-pointer active:bg-slate-100';
-
-    const cardChip = t.card
-      ? (t.card.imageUrl
-        ? `<span class="credit-card-mini"><img class="credit-card-mini__img" src="${A.url(t.card.imageUrl)}" alt="" />${escapeHtml(t.card.name)}</span>`
-        : `<span class="credit-card-mini">💳 ${escapeHtml(t.card.name)}</span>`)
-      : `<span class="credit-card-mini" style="background:#94a3b8">已刪除的卡片</span>`;
-
-    const pmChip = t.paymentMethod
-      ? (t.paymentMethod.imageUrl
-        ? `<span class="pm-badge"><img class="pm-badge__img" src="${A.url(t.paymentMethod.imageUrl)}" alt="" />${escapeHtml(t.paymentMethod.name)}</span>`
-        : `<span class="pm-badge">💸 ${escapeHtml(t.paymentMethod.name)}</span>`)
-      : `<span class="pm-badge text-slate-400">未使用電子支付</span>`;
-
-    const events = t.matchedEvents || [];
-    const eventsHtml = events.length
-      ? events.map((ev) => {
-        const keywordSuffix = ev.matchedKeyword ? `（${escapeHtml(ev.matchedKeyword)} 符合）` : '';
-        return `<span class="chip chip-active" title="${escapeHtml(rewardLabel(ev))}">🎁 ${escapeHtml(ev.title)}${keywordSuffix}</span>`;
-      }).join('')
-      : '<span class="text-[11px] text-slate-400">未符合任何回饋活動</span>';
-
-    div.innerHTML = `
-      <div class="flex items-start justify-between gap-3">
-        <div class="min-w-0 flex-1">
-          <div class="flex flex-wrap items-center gap-1.5">${cardChip}${pmChip}</div>
-          <div class="text-xs text-slate-500 mt-1.5">${A.fmtDate(t.transactionAt)}${t.note ? ' · ' + escapeHtml(t.note) : ''}</div>
-        </div>
-        <div class="text-right flex-shrink-0">
-          <div class="text-base font-semibold text-slate-800">NT$${A.fmtNumber(t.amount)}</div>
-          <div class="text-[10px] mt-0.5 inline-block px-1.5 py-0.5 rounded-full ${t.source === 'manual' ? 'bg-slate-100 text-slate-600' : 'bg-brand-50 text-brand-700'}">${SOURCE_LABELS[t.source] || t.source}</div>
-        </div>
-      </div>
-      <div class="mt-2 flex flex-wrap gap-1">${eventsHtml}</div>`;
-    div.addEventListener('click', () => openTxnModal(t));
-    return div;
-  }
-
-  async function loadTxns() {
-    const seq = ++loadSeq;
-    txnList.innerHTML = '<div class="px-4 py-6 text-center text-slate-400 text-sm">載入中…</div>';
-    pager.querySelectorAll('button').forEach((b) => { b.disabled = true; });
-    const params = new URLSearchParams();
-    if (state.q) params.set('q', state.q);
-    if (state.cardId) params.set('cardId', state.cardId);
-    if (state.pmId) params.set('paymentMethodId', state.pmId);
-    if (state.source) params.set('source', state.source);
-    if (state.from) params.set('from', dayBoundaryIso(state.from, false));
-    if (state.to) params.set('to', dayBoundaryIso(state.to, true));
-    params.set('page', state.page);
-    params.set('pageSize', state.pageSize);
-    try {
-      const data = await A.jsonFetch(A.api('/transactions?' + params.toString()));
-      if (seq !== loadSeq) return;
-      const items = data.items || [];
-      txnList.innerHTML = '';
-      if (!items.length) {
-        txnList.innerHTML = '<div class="px-4 py-6 text-center text-slate-400 text-sm">沒有符合條件的交易紀錄</div>';
-      } else {
-        items.forEach((t) => txnList.appendChild(txnCardEl(t)));
-      }
-      const totalPages = Math.max(1, Math.ceil(data.total / data.pageSize));
-      pager.innerHTML = `
-        <span>共 ${A.fmtNumber(data.total)} 筆</span>
-        <div class="flex items-center gap-2">
-          <button id="prevPageBtn" class="px-2 py-1 rounded border border-slate-300 disabled:opacity-40" ${state.page <= 1 ? 'disabled' : ''}>上一頁</button>
-          <span>${state.page} / ${totalPages}</span>
-          <button id="nextPageBtn" class="px-2 py-1 rounded border border-slate-300 disabled:opacity-40" ${state.page >= totalPages ? 'disabled' : ''}>下一頁</button>
-        </div>`;
-      document.getElementById('prevPageBtn')?.addEventListener('click', () => { state.page--; loadTxns(); });
-      document.getElementById('nextPageBtn')?.addEventListener('click', () => { state.page++; loadTxns(); });
-    } catch (err) {
-      if (seq !== loadSeq) return;
-      txnList.innerHTML = `<div class="px-4 py-6 text-center text-rose-500 text-sm">載入失敗：${escapeHtml(err.message)}</div>`;
-    }
-  }
-
-  // ─── Filter wiring ───
-  qInput.addEventListener('input', debounce(() => { state.q = qInput.value.trim(); state.page = 1; loadTxns(); }, 300));
-  cardFilter.addEventListener('change', () => { state.cardId = cardFilter.value; state.page = 1; loadTxns(); });
-  pmFilter.addEventListener('change', () => { state.pmId = pmFilter.value; state.page = 1; loadTxns(); });
-  sourceFilter.addEventListener('change', () => { state.source = sourceFilter.value; state.page = 1; loadTxns(); });
-
-  function applyDateRange() {
-    const from = fromInput.value;
-    const to = toInput.value;
-    // Keep the native pickers from offering an inverted range.
-    toInput.min = from;
-    fromInput.max = to;
-    if (from && to && from > to) {
-      A.showError(rangeError, '起始日期不可晚於結束日期');
+  function render() {
+    const box = $('txnList');
+    if (!state.items.length) {
+      const filtered = state.q || state.cardId || state.pmId || state.from || state.to || state.minAmount || state.maxAmount || state.source;
+      box.innerHTML = `<div class="card">${A.emptyState('receipt', filtered ? '沒有符合條件的交易' : '還沒有交易紀錄', filtered ? '' : '手動記一筆，或在設定建立 API 金鑰讓記帳 App 自動回報', `<button class="btn btn-primary btn-sm" data-new-txn>${icon('plus', 'i-sm')}記一筆</button>`)}</div>`;
+      $('moreBtn').hidden = true;
       return;
     }
-    A.showError(rangeError, '');
-    if (from === state.from && to === state.to) return;
-    state.from = from;
-    state.to = to;
-    state.page = 1;
-    loadTxns();
+    const days = new Map();
+    for (const t of state.items) {
+      const k = F.dayKey(t.transactionAt);
+      if (!days.has(k)) days.set(k, []);
+      days.get(k).push(t);
+    }
+    box.innerHTML = Array.from(days.entries()).map(([k, list]) => `
+      <section>
+        <h2 class="mb-1.5 flex items-center justify-between px-1 text-[13px] font-semibold muted"><span>${esc(F.dayLabel(k))}</span><span class="money">${F.money(list.reduce((s, t) => s + Number(t.amount), 0))}</span></h2>
+        <div class="card overflow-hidden"><div class="list">${list.map(txnRow).join('')}</div></div>
+      </section>`).join('');
+    $('moreBtn').hidden = state.items.length >= state.total;
   }
 
-  fromInput.addEventListener('change', applyDateRange);
-  toInput.addEventListener('change', applyDateRange);
-
-  rangePresets.addEventListener('click', (e) => {
-    const range = e.target.closest('[data-range]')?.dataset.range;
-    if (!range) return;
-    const now = new Date();
-    let from = '';
-    let to = '';
-    if (range === 'thisMonth') {
-      from = toDateInputValue(new Date(now.getFullYear(), now.getMonth(), 1));
-      to = toDateInputValue(new Date(now.getFullYear(), now.getMonth() + 1, 0));
-    } else if (range === 'lastMonth') {
-      from = toDateInputValue(new Date(now.getFullYear(), now.getMonth() - 1, 1));
-      to = toDateInputValue(new Date(now.getFullYear(), now.getMonth(), 0));
-    } else if (range === 'last30') {
-      from = toDateInputValue(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29));
-      to = toDateInputValue(now);
+  async function load(reset = true) {
+    const seq = ++state.seq;
+    if (reset) {
+      state.page = 1;
+      $('txnList').innerHTML = A.skeletonRows(4, 'h-16');
     }
-    fromInput.value = from;
-    toInput.value = to;
-    applyDateRange();
+    const syncFilterDot = () => { $('filterDot').hidden = !(state.cardId || state.pmId || state.minAmount || state.maxAmount || state.source || (state.range === 'custom')); };
+    syncFilterDot();
+    try {
+      const d = await A.get('/transactions?' + query());
+      if (seq !== state.seq) return;
+      state.items = reset ? d.items : state.items.concat(d.items);
+      state.total = d.total;
+      $('summaryLabel').textContent = RANGE_LABEL[state.range] + (state.q || state.cardId || state.pmId ? '（已篩選）' : '');
+      $('summaryTotal').textContent = F.money(d.summary.totalAmount);
+      $('summaryCount').textContent = `${F.num(d.summary.count)} 筆`;
+      render();
+    } catch (err) {
+      if (seq !== state.seq) return;
+      $('txnList').innerHTML = `<div class="card">${A.errorState(err, 'retryTxn')}</div>`;
+      const r = $('retryTxn');
+      if (r) r.onclick = () => load(true);
+    }
+  }
+
+  // Filters
+  $('qInput').addEventListener('input', A.debounce(() => { state.q = $('qInput').value.trim(); load(); }, 300));
+  $('rangeChips').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-range]');
+    if (!b) return;
+    state.range = b.dataset.range;
+    A.setPressed($('rangeChips'), '[data-range]', state.range, 'range');
+    if (state.range === 'custom') { A.sheet.open('filterSheet'); return; }
+    const r = rangeDates(state.range);
+    state.from = r ? F.inputDate(r[0]) : '';
+    state.to = r ? F.inputDate(r[1]) : '';
+    load();
+  });
+  $('filterBtn').addEventListener('click', () => {
+    $('fFrom').value = state.from; $('fTo').value = state.to;
+    A.sheet.open('filterSheet');
+  });
+  $('fApply').addEventListener('click', () => {
+    if ($('fFrom').value && $('fTo').value && $('fFrom').value > $('fTo').value) { A.toast('起始日期不可晚於結束日期', { type: 'error' }); return; }
+    Object.assign(state, {
+      cardId: $('fCard').value, pmId: $('fPm').value, source: $('fSource').value,
+      minAmount: $('fMin').value, maxAmount: $('fMax').value, from: $('fFrom').value, to: $('fTo').value
+    });
+    if (state.from || state.to) {
+      const preset = Object.keys(RANGE_LABEL).find((k) => { const r = rangeDates(k); return r && F.inputDate(r[0]) === state.from && F.inputDate(r[1]) === state.to; });
+      state.range = preset || 'custom';
+    } else state.range = '';
+    A.setPressed($('rangeChips'), '[data-range]', state.range, 'range');
+    A.sheet.close('filterSheet');
+    load();
+  });
+  $('fReset').addEventListener('click', () => {
+    ['fCard', 'fPm', 'fSource', 'fMin', 'fMax', 'fFrom', 'fTo'].forEach((id) => { $(id).value = ''; });
+    Object.assign(state, { cardId: '', pmId: '', source: '', minAmount: '', maxAmount: '', from: '', to: '', range: '' });
+    A.setPressed($('rangeChips'), '[data-range]', '', 'range');
+    A.sheet.close('filterSheet');
+    load();
+  });
+  $('moreBtn').addEventListener('click', async () => {
+    state.page += 1;
+    A.setLoading($('moreBtn'), true);
+    await load(false);
+    A.setLoading($('moreBtn'), false);
   });
 
-  // ─── Transaction modal ───
-  function openTxnModal(t) {
-    txnForm.reset();
-    A.showError(txnFormError, '');
-    if (t) {
-      txnModalTitle.textContent = '編輯交易';
-      txnForm.id.value = t.id;
-      txnForm.cardId.value = t.cardId;
-      txnForm.paymentMethodId.value = t.paymentMethodId || '';
-      txnForm.amount.value = t.amount;
-      txnForm.transactionAt.value = toLocalInputValue(t.transactionAt);
-      txnForm.note.value = t.note || '';
-      txnForm.latitude.value = t.latitude ?? '';
-      txnForm.longitude.value = t.longitude ?? '';
-      deleteTxnBtn.classList.remove('hidden');
-    } else {
-      txnModalTitle.textContent = '手動新增交易';
-      txnForm.id.value = '';
-      txnForm.transactionAt.value = toLocalInputValue(new Date());
-      deleteTxnBtn.classList.add('hidden');
-    }
-    A.openModal('txnModal');
+  // ─── Form ───
+  const form = $('txnForm');
+  function renderPickers() {
+    $('cardPick').innerHTML = state.cards.length
+      ? state.cards.map((c) => `<button type="button" class="chip" data-card="${c.id}" aria-pressed="${state.pick.card === c.id}">${c.imageUrl ? `<img class="chip-img" src="${esc(A.asset(c.imageUrl))}" alt="">` : `<span class="pay-dot" style="background:${esc(c.color || '#94a3b8')}"></span>`}${esc(c.name)}</button>`).join('')
+      : `<a class="text-sm text-brand-600 underline" href="${A.url('/tags')}">先新增卡片</a>`;
+    $('pmPick').innerHTML = `<button type="button" class="chip" data-pm="" aria-pressed="${state.pick.pm == null}">直接刷卡</button>`
+      + state.pms.map((p) => `<button type="button" class="chip" data-pm="${p.id}" aria-pressed="${state.pick.pm === p.id}">${p.imageUrl ? `<img class="chip-img" src="${esc(A.asset(p.imageUrl))}" alt="">` : ''}${esc(p.name)}</button>`).join('');
+  }
+  form.addEventListener('click', (e) => {
+    const c = e.target.closest('[data-card]');
+    const p = e.target.closest('[data-pm]');
+    if (c) { state.pick.card = Number(c.dataset.card); A.setPressed($('cardPick'), '[data-card]', state.pick.card, 'card'); }
+    if (p) { state.pick.pm = p.dataset.pm ? Number(p.dataset.pm) : null; A.setPressed($('pmPick'), '[data-pm]', p.dataset.pm, 'pm'); }
+  });
+
+  function openForm(t) {
+    form.reset();
+    A.showError($('txnError'), '');
+    form.id.value = t ? t.id : '';
+    $('txnTitle').textContent = t ? '編輯交易' : '記一筆';
+    $('deleteTxnBtn').hidden = !t;
+    const last = A.store.get('lastPick', {});
+    state.pick.card = t ? t.cardId : (state.cards.some((c) => c.id === last.card) ? last.card : (state.cards[0] && state.cards[0].id) || null);
+    state.pick.pm = t ? t.paymentMethodId : (state.pms.some((p) => p.id === last.pm) ? last.pm : null);
+    renderPickers();
+    form.amount.value = t ? Number(t.amount) : '';
+    form.note.value = t ? t.note || '' : '';
+    form.transactionAt.value = F.inputDateTime(t ? t.transactionAt : new Date());
+    form.transactionAt.dataset.initial = form.transactionAt.value;
+    form.latitude.value = t && t.latitude != null ? t.latitude : '';
+    form.longitude.value = t && t.longitude != null ? t.longitude : '';
+    $('txnMatched').innerHTML = t && (t.matchedEvents || []).length
+      ? `<div class="rounded-xl bg-emerald-50 p-3 text-[13px] text-emerald-900 dark:bg-emerald-500/10 dark:text-emerald-200"><div class="font-semibold">計入的回饋活動</div><ul class="mt-1 space-y-0.5">${t.matchedEvents.map((ev) => `<li>• ${esc(ev.title)}${ev.estimatedReward ? `（這筆約 ${F.num(ev.estimatedReward)}）` : ''}</li>`).join('')}</ul></div>`
+      : (t ? '<div class="text-[13px] muted">這筆沒有計入任何回饋活動</div>' : '');
+    if (t && t.externalRef) $('txnMatched').insertAdjacentHTML('beforeend', `<div class="mt-2 text-[12px] muted">外部編號：${esc(t.externalRef)}</div>`);
+    A.sheet.open('txnSheet');
+    if (!t) setTimeout(() => form.amount.focus(), 150);
   }
 
-  newTxnBtn?.addEventListener('click', () => openTxnModal(null));
-
-  txnForm?.addEventListener('submit', async (e) => {
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const submitBtn = txnForm.querySelector('button[type=submit]');
-    A.setLoading(submitBtn, true);
-    A.showError(txnFormError, '');
+    if (!(Number(form.amount.value) > 0)) { A.showError($('txnError'), '請輸入大於 0 的金額'); return; }
+    if (!state.pick.card) { A.showError($('txnError'), '請選擇卡片'); return; }
+    const body = {
+      cardId: state.pick.card,
+      paymentMethodId: state.pick.pm,
+      amount: Number(form.amount.value),
+      note: form.note.value.trim() || null,
+      transactionAt: !form.transactionAt.value || (!form.id.value && form.transactionAt.value === form.transactionAt.dataset.initial)
+        ? new Date().toISOString()
+        : (form.transactionAt.value === form.transactionAt.dataset.initial ? undefined : new Date(form.transactionAt.value).toISOString()),
+      latitude: form.latitude.value || null,
+      longitude: form.longitude.value || null
+    };
+    const btn = $('saveTxnBtn');
+    A.setLoading(btn, true, '儲存中');
     try {
-      const data = {
-        cardId: Number(txnForm.cardId.value),
-        paymentMethodId: txnForm.paymentMethodId.value ? Number(txnForm.paymentMethodId.value) : null,
-        amount: Number(txnForm.amount.value),
-        transactionAt: new Date(txnForm.transactionAt.value).toISOString(),
-        note: txnForm.note.value || null,
-        latitude: txnForm.latitude.value || null,
-        longitude: txnForm.longitude.value || null
-      };
-      const id = txnForm.id.value;
-      if (id) {
-        await A.jsonFetch(A.api(`/transactions/${id}`), { method: 'PUT', body: data });
-      } else {
-        await A.jsonFetch(A.api('/transactions'), { method: 'POST', body: data });
-      }
-      A.closeModal('txnModal');
-      await loadTxns();
+      const id = form.id.value;
+      const saved = id ? await A.send('PUT', `/transactions/${id}`, body) : await A.send('POST', '/transactions', body);
+      A.store.set('lastPick', { card: body.cardId, pm: body.paymentMethodId });
+      A.sheet.close('txnSheet');
+      const n = (saved.matchedEvents || []).length;
+      A.toast(id ? '已更新' : (n ? `已記錄，計入 ${n} 個回饋活動` : '已記錄（沒有符合的回饋活動）'));
+      load();
     } catch (err) {
-      A.showError(txnFormError, err.message);
-    } finally {
-      A.setLoading(submitBtn, false);
-    }
+      A.showError($('txnError'), err.message);
+    } finally { A.setLoading(btn, false); }
   });
 
-  deleteTxnBtn?.addEventListener('click', async () => {
-    const id = txnForm.id.value;
-    if (!id) return;
-    if (!confirm('確定刪除此筆交易紀錄？')) return;
+  $('deleteTxnBtn').addEventListener('click', async () => {
+    if (!(await A.confirm('刪除這筆交易？相關活動的使用量會重新計算。', { okText: '刪除', danger: true }))) return;
     try {
-      await A.jsonFetch(A.api(`/transactions/${id}`), { method: 'DELETE' });
-      A.closeModal('txnModal');
-      await loadTxns();
-    } catch (err) {
-      A.showError(txnFormError, err.message);
-    }
+      await A.send('DELETE', `/transactions/${form.id.value}`);
+      A.sheet.close('txnSheet');
+      A.toast('已刪除');
+      load();
+    } catch (err) { A.showError($('txnError'), err.message); }
   });
 
-  // ─── API key management ───
-  function apiKeyRowEl(k) {
-    const li = document.createElement('li');
-    li.className = 'flex items-center gap-3 rounded-xl border border-slate-200 p-3' + (!k.isActive ? ' opacity-50' : '');
-    li.dataset.id = k.id;
-    li.innerHTML = `
-      <div class="min-w-0 flex-1">
-        <div class="font-medium text-sm truncate">${escapeHtml(k.name)}${!k.isActive ? '（已停用）' : ''}</div>
-        <div class="text-[11px] text-slate-500 font-mono">${escapeHtml(k.keyMask)}</div>
-        <div class="text-[10px] text-slate-400">${k.lastUsedAt ? '最後使用：' + A.fmtDate(k.lastUsedAt) : '尚未使用'}</div>
-      </div>
-      <button type="button" data-action="toggle" class="text-xs text-slate-500 hover:text-slate-700">${k.isActive ? '停用' : '啟用'}</button>
-      <button type="button" data-action="delete" class="text-xs text-rose-600 hover:text-rose-700">刪除</button>
-    `;
-    return li;
+  $('geoBtn').addEventListener('click', () => {
+    const btn = $('geoBtn');
+    if (!navigator.geolocation) { A.toast('此裝置不支援定位', { type: 'error' }); return; }
+    A.setLoading(btn, true, '定位中');
+    navigator.geolocation.getCurrentPosition((pos) => {
+      form.latitude.value = pos.coords.latitude.toFixed(6);
+      form.longitude.value = pos.coords.longitude.toFixed(6);
+      A.setLoading(btn, false);
+    }, (err) => {
+      A.setLoading(btn, false);
+      A.toast(err.code === 1 ? '未允許定位權限' : '無法取得位置', { type: 'error' });
+    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+  });
+
+  $('txnList').addEventListener('click', (e) => {
+    const r = e.target.closest('[data-txn]');
+    if (r) openForm(state.items.find((t) => t.id === Number(r.dataset.txn)));
+  });
+  document.addEventListener('click', (e) => { if (e.target.closest('[data-new-txn]')) openForm(null); });
+  $('fab').addEventListener('click', () => openForm(null));
+  $('newTxnBtnTop').addEventListener('click', () => openForm(null));
+
+  async function boot() {
+    A.setPressed($('rangeChips'), '[data-range]', '', 'range');
+    try {
+      const { cards, pms } = await A.loadTags();
+      state.cards = cards;
+      state.pms = pms;
+      $('fCard').insertAdjacentHTML('beforeend', cards.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join(''));
+      $('fPm').insertAdjacentHTML('beforeend', pms.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join(''));
+    } catch (_) { /* handled in pickers */ }
+    await load();
+    const notes = new Set(state.items.map((t) => t.note).filter(Boolean));
+    $('noteList').innerHTML = Array.from(notes).slice(0, 60).map((n) => `<option value="${esc(n)}"></option>`).join('');
+    if (params.get('new')) {
+      openForm(null);
+      params.delete('new');
+      history.replaceState(history.state, '', location.pathname + (params.toString() ? '?' + params : ''));
+    }
   }
-
-  function renderApiKeys(keys) {
-    apiKeysList.innerHTML = '';
-    if (!keys.length) {
-      apiKeysEmpty.classList.remove('hidden');
-      return;
-    }
-    apiKeysEmpty.classList.add('hidden');
-    keys.forEach((k) => apiKeysList.appendChild(apiKeyRowEl(k)));
-  }
-
-  async function loadApiKeys() {
-    A.showError(apiKeysError, '');
-    try {
-      const keys = await A.jsonFetch(A.api('/transactions/api-keys'));
-      renderApiKeys(keys);
-    } catch (err) {
-      A.showError(apiKeysError, '載入失敗：' + err.message);
-    }
-  }
-
-  apiKeysBtn?.addEventListener('click', () => {
-    A.showError(apiKeyAddError, '');
-    newTokenBox.classList.add('hidden');
-    apiKeyAddForm.reset();
-    loadApiKeys();
-    A.openModal('apiKeysModal');
-  });
-
-  apiKeysList?.addEventListener('click', async (e) => {
-    const action = e.target.closest('[data-action]')?.dataset.action;
-    if (!action) return;
-    const li = e.target.closest('li[data-id]');
-    if (!li) return;
-    const id = li.dataset.id;
-    A.showError(apiKeysError, '');
-    try {
-      if (action === 'toggle') {
-        const isActive = li.classList.contains('opacity-50');
-        await A.jsonFetch(A.api(`/transactions/api-keys/${id}`), { method: 'PUT', body: { isActive } });
-        await loadApiKeys();
-      } else if (action === 'delete') {
-        if (!confirm('確定刪除這把金鑰？使用此金鑰的呼叫將立即失效。')) return;
-        await A.jsonFetch(A.api(`/transactions/api-keys/${id}`), { method: 'DELETE' });
-        await loadApiKeys();
-      }
-    } catch (err) {
-      A.showError(apiKeysError, err.message);
-    }
-  });
-
-  apiKeyAddForm?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const submitBtn = apiKeyAddForm.querySelector('button[type=submit]');
-    A.setLoading(submitBtn, true);
-    A.showError(apiKeyAddError, '');
-    try {
-      const created = await A.jsonFetch(A.api('/transactions/api-keys'), {
-        method: 'POST',
-        body: { name: apiKeyAddForm.name.value }
-      });
-      apiKeyAddForm.reset();
-      newTokenValue.textContent = created.token;
-      newTokenBox.classList.remove('hidden');
-      await loadApiKeys();
-    } catch (err) {
-      A.showError(apiKeyAddError, err.message);
-    } finally {
-      A.setLoading(submitBtn, false);
-    }
-  });
-
-  copyTokenBtn?.addEventListener('click', async () => {
-    try {
-      await navigator.clipboard.writeText(newTokenValue.textContent);
-      copyTokenBtn.textContent = '已複製';
-      setTimeout(() => { copyTokenBtn.textContent = '複製'; }, 1500);
-    } catch (_) { /* clipboard unavailable, user can select manually */ }
-  });
-
-  // Boot
-  loadTags().then(loadTxns);
+  boot();
 })();

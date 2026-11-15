@@ -30,6 +30,11 @@ module.exports = (sequelize, DataTypes) => {
       defaultValue: 0,
       comment: '即時餘額，由 PointHistory 重算同步'
     },
+    valuePerPoint: {
+      type: DataTypes.DECIMAL(12, 4),
+      allowNull: true,
+      comment: '每 1 點約等於多少新台幣；用來換算點數總價值，null 代表不換算'
+    },
     note: { type: DataTypes.TEXT, allowNull: true }
   }, {
     tableName: 'points',

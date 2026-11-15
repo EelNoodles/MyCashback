@@ -31,6 +31,11 @@ module.exports = (sequelize, DataTypes) => {
       defaultValue: 0,
       comment: '此筆紀錄發生後的餘額快照（重算後寫入）'
     },
+    targetBalance: {
+      type: DataTypes.DECIMAL(18, 2),
+      allowNull: true,
+      comment: "changeType='set' 時使用者宣告的絕對餘額；重算時以此為錨點，前面插入/修改紀錄也不會改變它"
+    },
     occurredAt: {
       type: DataTypes.DATE,
       allowNull: false,

@@ -1,187 +1,122 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
-<head>
-  <%- include('partials/head', { title: title }) %>
-</head>
-<body class="min-h-screen bg-slate-50 text-slate-800 pb-20 sm:pb-0">
-  <%- include('partials/nav', { active: active }) %>
+<head><%- include('partials/head') %></head>
+<body data-auth="1">
+  <%- include('partials/nav', { active }) %>
+  <header class="appbar">
+    <div class="appbar-inner">
+      <h1 class="appbar-title">點數</h1>
+      <button type="button" class="icon-btn icon-btn-primary" id="newPointBtn" aria-label="新增點數"><svg class="i"><use href="#i-plus"/></svg></button>
+    </div>
+  </header>
 
-  <main class="max-w-6xl mx-auto px-4 py-6 space-y-6">
-    <header class="flex items-center justify-between gap-3 flex-wrap">
-      <div>
-        <h1 class="text-2xl font-semibold">點數時間軸</h1>
-        <p class="text-sm text-slate-500">追蹤每筆變動，分析花費/累積</p>
-      </div>
-      <button id="newPointBtn" class="px-3 py-2 text-sm rounded-lg bg-brand-600 text-white hover:bg-brand-700">+ 新增點數</button>
-    </header>
-
-    <!-- Points list as horizontal scroll on mobile, grid on desktop -->
-    <section>
-      <div id="pointsList" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-        <div class="text-sm text-slate-400 col-span-full" data-loading>載入中…</div>
-      </div>
+  <main class="page">
+    <section class="card card-pad grid grid-cols-3 gap-3">
+      <div><div class="stat-label">總價值</div><div class="stat-value money" id="sumValue">—</div></div>
+      <div><div class="stat-label">本月獲得</div><div class="stat-value text-emerald-600 dark:text-emerald-400" id="sumEarned">—</div></div>
+      <div><div class="stat-label">本月使用</div><div class="stat-value text-rose-600 dark:text-rose-400" id="sumSpent">—</div></div>
     </section>
-
-    <!-- Detail / timeline pane -->
-    <section id="timelinePane" class="hidden bg-white rounded-2xl shadow-sm border border-slate-100">
-      <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-2">
-        <div class="min-w-0">
-          <div class="text-sm text-slate-500">當前餘額</div>
-          <div class="text-2xl font-semibold truncate" id="tlBalance">—</div>
-          <div class="text-xs text-slate-400 truncate" id="tlPointName">—</div>
-        </div>
-        <div class="flex gap-2 flex-shrink-0">
-          <button id="addHistoryBtn" class="px-3 py-1.5 text-xs rounded-lg bg-brand-600 text-white hover:bg-brand-700">+ 紀錄</button>
-          <button id="addExpiryBtn" class="px-3 py-1.5 text-xs rounded-lg bg-amber-500 text-white hover:bg-amber-600">⏰ 到期提醒</button>
-          <button id="closeTimelineBtn" class="px-3 py-1.5 text-xs rounded-lg border border-slate-300">關閉</button>
-        </div>
-      </div>
-
-      <div class="px-4 py-3 grid grid-cols-3 gap-3 border-b border-slate-100" id="tlStats">
-        <div>
-          <div class="text-[10px] uppercase text-slate-400">本月累積</div>
-          <div class="text-base font-semibold text-emerald-600" data-tlstat="earned">—</div>
-        </div>
-        <div>
-          <div class="text-[10px] uppercase text-slate-400">本月花費</div>
-          <div class="text-base font-semibold text-rose-600" data-tlstat="spent">—</div>
-        </div>
-        <div>
-          <div class="text-[10px] uppercase text-slate-400">本月淨變動</div>
-          <div class="text-base font-semibold" data-tlstat="net">—</div>
-        </div>
-      </div>
-
-      <ol id="timeline" class="relative px-4 py-3 space-y-3 max-h-[60vh] overflow-y-auto">
-      </ol>
-    </section>
+    <div id="pointList" class="mt-3"></div>
   </main>
 
-  <!-- Modal: Point form -->
-  <div id="pointModal" class="hidden fixed inset-0 z-40 bg-black/40 grid place-items-center px-3">
-    <div class="bg-white w-full min-w-0 max-w-md rounded-2xl shadow-xl p-5 animate-slide-up">
-      <h3 class="text-lg font-semibold" id="pointModalTitle">新增點數</h3>
-      <form id="pointForm" class="mt-3 space-y-3" enctype="multipart/form-data">
-        <input type="hidden" name="id" />
-        <label class="block">
-          <span class="text-xs text-slate-500">名稱 <span class="text-rose-500">*</span></span>
-          <input name="name" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-        </label>
-        <label class="block">
-          <span class="text-xs text-slate-500">發行單位</span>
-          <input name="issuer" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-        </label>
-        <label class="block">
-          <span class="text-xs text-slate-500">當前點數 (建立時填入)</span>
-          <input name="currentBalance" type="number" step="0.01" min="0" value="0"
-                 class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-        </label>
-        <label class="block">
-          <span class="text-xs text-slate-500">圖片 (選填，無則自動產生)</span>
-          <input name="image" type="file" accept="image/*" class="mt-1 block text-sm" />
-        </label>
-        <label class="block">
-          <span class="text-xs text-slate-500">備註</span>
-          <textarea name="note" rows="2" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
-        </label>
-        <div id="pointFormError" class="hidden text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2"></div>
-        <div class="flex justify-end gap-2 pt-1">
-          <button type="button" data-dismiss="pointModal" class="px-3 py-2 text-sm rounded-lg border border-slate-300">取消</button>
-          <button id="deletePointBtn" type="button" class="hidden px-3 py-2 text-sm rounded-lg border border-rose-300 text-rose-600">刪除</button>
-          <button type="submit" class="px-3 py-2 text-sm rounded-lg bg-brand-600 text-white hover:bg-brand-700">
-            <span data-state="idle">儲存</span><span data-state="loading" class="hidden">儲存中…</span>
-          </button>
+  <!-- Point detail -->
+  <div class="sheet-root" id="pointSheet" hidden role="dialog" aria-modal="true" aria-labelledby="pdTitle">
+    <div class="sheet-backdrop" data-close></div>
+    <div class="sheet sheet-full sheet-lg">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header"><h2 class="sheet-title" id="pdTitle">點數</h2>
+        <button type="button" class="icon-btn" id="pdEdit" aria-label="編輯點數資料"><svg class="i"><use href="#i-pencil"/></svg></button>
+        <button type="button" class="icon-btn" data-close aria-label="關閉"><svg class="i"><use href="#i-x"/></svg></button></div>
+      <div class="sheet-body">
+        <div class="rounded-2xl bg-slate-50 p-4 dark:bg-slate-800/60">
+          <div class="stat-label">目前餘額</div>
+          <div class="text-3xl font-extrabold tracking-tight money" id="pdBalance">—</div>
+          <div class="text-sm muted" id="pdValue"></div>
+          <div class="mt-3 grid grid-cols-3 gap-2">
+            <button type="button" class="btn btn-sm btn-success" data-change="earn"><svg class="i i-sm"><use href="#i-plus"/></svg>獲得</button>
+            <button type="button" class="btn btn-sm bg-rose-600 text-white" data-change="spend">− 使用</button>
+            <button type="button" class="btn btn-sm btn-secondary" data-change="set">= 校正</button>
+          </div>
         </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- Modal: History form -->
-  <div id="historyModal" class="hidden fixed inset-0 z-40 bg-black/40 grid place-items-center px-3">
-    <div class="bg-white w-full min-w-0 max-w-md rounded-2xl shadow-xl p-5 animate-slide-up">
-      <h3 class="text-lg font-semibold" id="historyModalTitle">新增紀錄</h3>
-      <form id="historyForm" class="mt-3 space-y-3">
-        <input type="hidden" name="hid" />
-        <div class="grid grid-cols-3 gap-2">
-          <label class="block">
-            <span class="text-xs text-slate-500">類型</span>
-            <select name="changeType" class="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm">
-              <option value="set">直接更新</option>
-              <option value="earn">獲得</option>
-              <option value="spend">花費</option>
-            </select>
-          </label>
-          <label class="block col-span-2">
-            <span class="text-xs text-slate-500">數量 <span class="text-rose-500">*</span></span>
-            <input name="amount" type="number" min="0" step="0.01" required
-                   class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          </label>
-        </div>
-        <label class="block">
-          <span class="text-xs text-slate-500">時間</span>
-          <input name="occurredAt" type="datetime-local" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-        </label>
-        <label class="block">
-          <span class="text-xs text-slate-500">備註</span>
-          <input name="note" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-        </label>
-        <div id="historyFormError" class="hidden text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2"></div>
-        <div class="flex justify-end gap-2 pt-1">
-          <button type="button" data-dismiss="historyModal" class="px-3 py-2 text-sm rounded-lg border border-slate-300">取消</button>
-          <button id="deleteHistoryBtn" type="button" class="hidden px-3 py-2 text-sm rounded-lg border border-rose-300 text-rose-600">刪除</button>
-          <button type="submit" class="px-3 py-2 text-sm rounded-lg bg-brand-600 text-white hover:bg-brand-700">
-            <span data-state="idle">儲存</span><span data-state="loading" class="hidden">儲存中…</span>
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- Modal: Expiry Management -->
-  <div id="expiryModal" class="hidden fixed inset-0 z-40 bg-black/40 grid place-items-center px-3">
-    <div class="bg-white w-full min-w-0 max-w-md rounded-2xl shadow-xl p-5 animate-slide-up max-h-[90vh] flex flex-col">
-      <div class="flex items-center justify-between mb-4">
-        <h3 class="text-lg font-semibold">到期提醒管理</h3>
-        <button data-dismiss="expiryModal" class="text-slate-400 hover:text-slate-600">✕</button>
+        <h3 class="section-title"><span>到期提醒</span><button type="button" id="addExpiryBtn">＋ 新增</button></h3>
+        <div id="pdExpiries" class="card overflow-hidden"></div>
+        <h3 class="section-title"><span>時間軸</span><span class="text-xs font-normal normal-case muted" id="pdMonth"></span></h3>
+        <div id="pdTimeline" class="card overflow-hidden"></div>
       </div>
+    </div>
+  </div>
 
-      <div class="overflow-y-auto flex-1 min-w-0 space-y-4 pr-1">
-        <!-- List of existing expiries -->
-        <div id="tlExpiries" class="hidden space-y-2 mb-4 border-b border-slate-100 pb-4">
-          <div class="text-xs font-medium text-slate-500">現有提醒</div>
-          <div id="tlExpiryList" class="space-y-2"></div>
+  <!-- History form -->
+  <div class="sheet-root" id="historySheet" hidden role="dialog" aria-modal="true" aria-labelledby="hTitle">
+    <div class="sheet-backdrop" data-close></div>
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header"><h2 class="sheet-title" id="hTitle">新增紀錄</h2><button type="button" class="icon-btn" data-close aria-label="關閉"><svg class="i"><use href="#i-x"/></svg></button></div>
+      <form id="historyForm" class="sheet-body space-y-3" novalidate>
+        <input type="hidden" name="hid">
+        <div class="seg" id="hTypeSeg">
+          <button type="button" data-type="earn">獲得</button>
+          <button type="button" data-type="spend">使用</button>
+          <button type="button" data-type="set">校正餘額</button>
         </div>
+        <label class="field"><span class="label" id="hAmountLabel">數量</span><input name="amount" type="number" inputmode="decimal" min="0" step="0.01" class="input input-lg money" required></label>
+        <span class="hint" id="hHint"></span>
+        <label class="field"><span class="label">時間</span><input name="occurredAt" type="datetime-local" class="input"></label>
+        <label class="field"><span class="label">備註</span><input name="note" class="input" maxlength="500" placeholder="例如：購物累積、折抵"></label>
+        <div class="error-box" id="hError" hidden></div>
+      </form>
+      <div class="sheet-footer">
+        <button type="button" class="btn btn-danger !px-3" id="hDelete" hidden aria-label="刪除"><svg class="i"><use href="#i-trash"/></svg></button>
+        <button type="button" class="btn btn-secondary flex-1" data-close>取消</button>
+        <button type="submit" form="historyForm" class="btn btn-primary flex-[2]">儲存</button>
+      </div>
+    </div>
+  </div>
 
-        <!-- Form to add new expiry -->
-        <div>
-          <div class="text-xs font-medium text-slate-500 mb-2" id="expiryModalTitle">新增提醒</div>
-          <form id="expiryForm" class="space-y-3">
-            <input type="hidden" name="eid" />
-            <div class="grid grid-cols-2 gap-3">
-              <label class="block">
-                <span class="text-xs text-slate-500">到期點數 <span class="text-rose-500">*</span></span>
-                <input name="amount" type="number" min="0" step="0.01" required
-                       class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-              </label>
-              <label class="block">
-                <span class="text-xs text-slate-500">到期日期 <span class="text-rose-500">*</span></span>
-                <input name="expiryDate" type="date" required
-                       class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-              </label>
-            </div>
-            <label class="block">
-              <span class="text-xs text-slate-500">備註</span>
-              <input name="note" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-            </label>
-            <div id="expiryFormError" class="hidden text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2"></div>
-            <div class="flex justify-end gap-2 pt-1">
-              <button type="button" id="cancelEditExpiryBtn" class="hidden px-3 py-2 text-sm rounded-lg border border-slate-300">取消編輯</button>
-              <button type="submit" class="px-3 py-2 text-sm rounded-lg bg-amber-500 text-white hover:bg-amber-600">
-                <span data-state="idle">儲存</span><span data-state="loading" class="hidden">儲存中…</span>
-              </button>
-            </div>
-          </form>
+  <!-- Expiry form -->
+  <div class="sheet-root" id="expirySheet" hidden role="dialog" aria-modal="true" aria-labelledby="eTitle">
+    <div class="sheet-backdrop" data-close></div>
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header"><h2 class="sheet-title" id="eTitle">到期提醒</h2><button type="button" class="icon-btn" data-close aria-label="關閉"><svg class="i"><use href="#i-x"/></svg></button></div>
+      <form id="expiryForm" class="sheet-body space-y-3" novalidate>
+        <input type="hidden" name="eid">
+        <div class="grid grid-cols-2 gap-2">
+          <label class="field"><span class="label">到期數量 *</span><input name="amount" type="number" inputmode="decimal" min="0" step="0.01" class="input" required></label>
+          <label class="field"><span class="label">到期日 *</span><input name="expiryDate" type="date" class="input" required></label>
         </div>
+        <label class="field"><span class="label">備註</span><input name="note" class="input" maxlength="500"></label>
+        <span class="hint">每天 21:00 會推播 7 天內到期的點數（需在設定開啟推播）</span>
+        <div class="error-box" id="eError" hidden></div>
+      </form>
+      <div class="sheet-footer">
+        <button type="button" class="btn btn-danger !px-3" id="eDelete" hidden aria-label="刪除"><svg class="i"><use href="#i-trash"/></svg></button>
+        <button type="button" class="btn btn-secondary flex-1" data-close>取消</button>
+        <button type="submit" form="expiryForm" class="btn btn-primary flex-[2]">儲存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Point form -->
+  <div class="sheet-root" id="pointFormSheet" hidden role="dialog" aria-modal="true" aria-labelledby="pfTitle">
+    <div class="sheet-backdrop" data-close></div>
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header"><h2 class="sheet-title" id="pfTitle">新增點數</h2><button type="button" class="icon-btn" data-close aria-label="關閉"><svg class="i"><use href="#i-x"/></svg></button></div>
+      <form id="pointForm" class="sheet-body space-y-3" novalidate enctype="multipart/form-data">
+        <input type="hidden" name="id">
+        <label class="field"><span class="label">名稱 *</span><input name="name" class="input" maxlength="120" required placeholder="例如：全聯福利點"></label>
+        <label class="field"><span class="label">發行單位</span><input name="issuer" class="input" maxlength="120" placeholder="例如：全聯"></label>
+        <label class="field" id="pfBalanceField"><span class="label">目前餘額</span><input name="currentBalance" type="number" inputmode="decimal" min="0" step="0.01" class="input" value="0"></label>
+        <label class="field"><span class="label">每點約值（新台幣）</span><input name="valuePerPoint" type="number" inputmode="decimal" min="0" step="0.0001" class="input" placeholder="例如 1；航空哩程約 0.3"><span class="hint">設定後可換算點數總價值；不確定可留空</span></label>
+        <label class="field"><span class="label">圖示（選填）</span><input name="image" type="file" accept="image/*" class="block w-full text-sm"></label>
+        <label class="field"><span class="label">備註</span><textarea name="note" rows="2" class="textarea"></textarea></label>
+        <div class="error-box" id="pfError" hidden></div>
+      </form>
+      <div class="sheet-footer">
+        <button type="button" class="btn btn-danger !px-3" id="pfDelete" hidden aria-label="刪除"><svg class="i"><use href="#i-trash"/></svg></button>
+        <button type="button" class="btn btn-secondary flex-1" data-close>取消</button>
+        <button type="submit" form="pointForm" class="btn btn-primary flex-[2]">儲存</button>
       </div>
     </div>
   </div>

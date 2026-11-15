@@ -1,435 +1,258 @@
 (function () {
   'use strict';
   const A = window.App;
+  const { esc, icon } = A;
+  const F = A.fmt;
+  const $ = (id) => document.getElementById(id);
 
-  const listEl = document.getElementById('pointsList');
-  const timelinePane = document.getElementById('timelinePane');
-  const timelineEl = document.getElementById('timeline');
-  const tlBalanceEl = document.getElementById('tlBalance');
-  const tlPointNameEl = document.getElementById('tlPointName');
-  const tlStatsEl = document.getElementById('tlStats');
+  const state = { points: [], current: null, histories: [], expiries: [], hType: 'earn' };
 
-  const newPointBtn = document.getElementById('newPointBtn');
-  const closeTimelineBtn = document.getElementById('closeTimelineBtn');
-  const addHistoryBtn = document.getElementById('addHistoryBtn');
-
-  // Forms
-  const pointForm = document.getElementById('pointForm');
-  const pointFormError = document.getElementById('pointFormError');
-  const deletePointBtn = document.getElementById('deletePointBtn');
-  const pointModalTitle = document.getElementById('pointModalTitle');
-
-  const historyForm = document.getElementById('historyForm');
-  const historyFormError = document.getElementById('historyFormError');
-  const deleteHistoryBtn = document.getElementById('deleteHistoryBtn');
-  const historyModalTitle = document.getElementById('historyModalTitle');
-
-  let state = { points: [], currentPointId: null };
-
-  // Expiry elements
-  const addExpiryBtn = document.getElementById('addExpiryBtn');
-  const expiryForm = document.getElementById('expiryForm');
-  const expiryFormError = document.getElementById('expiryFormError');
-  const expiryModalTitle = document.getElementById('expiryModalTitle');
-  const tlExpiries = document.getElementById('tlExpiries');
-  const tlExpiryList = document.getElementById('tlExpiryList');
-
-  function pointCardEl(p) {
-    const card = document.createElement('button');
-    card.type = 'button';
-    card.className = 'card p-3 text-left flex flex-col gap-2 hover:shadow-md transition focus:ring-2 focus:ring-brand-300';
-    card.dataset.id = p.id;
-
-    const top = document.createElement('div');
-    top.className = 'flex items-center gap-3';
-
-    const icon = document.createElement('div');
-    icon.className = 'w-12 h-12 rounded-2xl text-white grid place-items-center text-base font-bold flex-shrink-0';
-    if (p.imageUrl) {
-      icon.style.backgroundImage = `url(${A.url(p.imageUrl)})`;
-      icon.style.backgroundSize = 'cover';
-      icon.style.backgroundPosition = 'center';
-    } else {
-      icon.style.background = A.gradientFromName(p.name);
-      icon.textContent = A.initialsFrom(p.name);
-    }
-
-    const info = document.createElement('div');
-    info.className = 'min-w-0';
-    info.innerHTML = `
-      <div class="text-xs text-slate-500 truncate">${p.issuer || ''}</div>
-      <div class="font-medium truncate">${p.name}</div>`;
-    top.append(icon, info);
-
-    const bottom = document.createElement('div');
-    bottom.className = 'flex items-end justify-between';
-    bottom.innerHTML = `
-      <div class="text-xl font-semibold tabular-nums">${A.fmtNumber(p.currentBalance)}</div>
-      <span class="text-xs text-brand-600">查看時間軸 →</span>`;
-
-    card.append(top, bottom);
-    card.addEventListener('click', () => openTimeline(p.id));
-
-    // Long press / right click to edit
-    card.addEventListener('contextmenu', (e) => {
-      e.preventDefault();
-      openPointModal(p);
-    });
-
-    return card;
+  function pointRow(p) {
+    const exp = p.nextExpiry;
+    const expBadge = exp
+      ? `<span class="badge ${exp.daysLeft <= 7 ? 'badge-rose' : 'badge-amber'}">${F.num(exp.amount)} 點 ${exp.daysLeft <= 0 ? '今天' : `${exp.daysLeft} 天後`}到期</span>`
+      : '';
+    const month = (p.monthEarned || p.monthSpent)
+      ? `<span class="text-[12px] muted">本月 ${p.monthEarned ? `<span class="text-emerald-600">+${F.num(p.monthEarned)}</span>` : ''}${p.monthSpent ? ` <span class="text-rose-600">−${F.num(p.monthSpent)}</span>` : ''}</span>`
+      : '';
+    return `<button type="button" class="row row-tap w-full text-left" data-point="${p.id}">
+      ${A.avatar(p.name, p.imageUrl)}
+      <span class="min-w-0 flex-1">
+        <span class="block truncate text-[15px] font-semibold">${esc(p.name)}</span>
+        <span class="mt-0.5 flex flex-wrap items-center gap-1.5">${p.issuer ? `<span class="text-[12px] muted">${esc(p.issuer)}</span>` : ''}${month}${expBadge}</span>
+      </span>
+      <span class="shrink-0 text-right">
+        <span class="block text-[17px] font-bold money">${F.num(p.currentBalance)}</span>
+        ${p.value != null ? `<span class="block text-[12px] muted money">≈ ${F.money(p.value, { decimals: 0 })}</span>` : ''}
+      </span>
+    </button>`;
   }
 
   async function loadPoints() {
     try {
-      listEl.innerHTML = `<div class="text-sm text-slate-400 col-span-full py-6 flex items-center justify-center gap-2"><svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> 載入中…</div>`;
-      state.points = await A.jsonFetch(A.api('/points'));
-      listEl.innerHTML = '';
-      if (!state.points.length) {
-        listEl.innerHTML = `<div class="text-sm text-slate-400 col-span-full">尚未建立點數，按右上「+ 新增點數」開始</div>`;
-        return;
-      }
-      const editLink = document.createElement('div');
-      editLink.className = 'text-xs text-slate-400 col-span-full';
-      editLink.textContent = '長按 / 右鍵卡片可編輯資訊';
-      listEl.appendChild(editLink);
-      for (const p of state.points) listEl.appendChild(pointCardEl(p));
+      state.points = await A.get('/points');
+      const valued = state.points.filter((p) => p.value != null);
+      $('sumValue').textContent = valued.length ? F.money(valued.reduce((s, p) => s + p.value, 0), { decimals: 0 }) : '—';
+      $('sumEarned').textContent = '+' + F.num(state.points.reduce((s, p) => s + (p.monthEarned || 0), 0));
+      $('sumSpent').textContent = '−' + F.num(state.points.reduce((s, p) => s + (p.monthSpent || 0), 0));
+      $('pointList').innerHTML = state.points.length
+        ? `<div class="card overflow-hidden"><div class="list">${state.points.map(pointRow).join('')}</div></div>`
+        : `<div class="card">${A.emptyState('star', '還沒有點數', '記下各家點數與到期日，到期前會提醒你', `<button class="btn btn-primary btn-sm" data-new-point>${icon('plus', 'i-sm')}新增點數</button>`)}</div>`;
     } catch (err) {
-      listEl.innerHTML = `<div class="text-sm text-rose-500 col-span-full">載入失敗：${err.message}</div>`;
+      $('pointList').innerHTML = `<div class="card">${A.errorState(err)}</div>`;
     }
   }
 
-  function timelineRowEl(h) {
-    const isPos = (h.changeType === 'earn') || (Number(h.delta) > 0 && h.changeType !== 'spend');
-    const sign = h.changeType === 'set' ? '=' : (isPos ? '+' : '−');
-    const colorCls = h.changeType === 'set' ? 'text-slate-700'
-      : isPos ? 'text-emerald-600' : 'text-rose-600';
-
-    const li = document.createElement('li');
-    li.className = 'relative pl-5 group';
-    li.innerHTML = `
-      <span class="absolute left-1 top-2 w-2.5 h-2.5 rounded-full bg-brand-500"></span>
-      <div class="flex items-start justify-between gap-3">
-        <div class="min-w-0">
-          <div class="text-xs text-slate-500">${A.fmtDate(h.occurredAt)}</div>
-          <div class="text-sm truncate">${h.note || (h.changeType === 'set' ? '更新餘額' : (h.changeType === 'earn' ? '獲得' : '花費'))}</div>
-          <div class="text-[10px] text-slate-400">餘額快照：${A.fmtNumber(h.balanceAfter)}</div>
-        </div>
-        <div class="text-right flex-shrink-0">
-          <div class="${colorCls} text-base font-semibold tabular-nums">${sign}${A.fmtNumber(Math.abs(Number(h.delta)) || (h.changeType === 'set' ? h.balanceAfter : 0))}</div>
-          <button class="text-[10px] text-slate-400 hover:text-brand-600" data-edit="${h.id}">編輯</button>
-        </div>
-      </div>`;
-    li.querySelector('[data-edit]').addEventListener('click', () => openHistoryModal(h));
-    return li;
+  // ─── Detail ───
+  const TYPE_LABEL = { earn: '獲得', spend: '使用', set: '校正' };
+  function historyRow(h) {
+    const d = Number(h.delta);
+    const color = h.changeType === 'earn' ? 'text-emerald-600 dark:text-emerald-400' : h.changeType === 'spend' ? 'text-rose-600 dark:text-rose-400' : 'text-slate-600 dark:text-slate-300';
+    const amount = h.changeType === 'set' ? `= ${F.num(h.targetBalance != null ? h.targetBalance : h.balanceAfter)}` : `${d >= 0 ? '+' : '−'}${F.num(Math.abs(d))}`;
+    return `<button type="button" class="row row-tap w-full text-left" data-history="${h.id}">
+      <span class="min-w-0 flex-1"><span class="block truncate text-sm font-semibold">${esc(h.note || TYPE_LABEL[h.changeType])}</span><span class="block text-[12px] muted">${F.datetime(h.occurredAt)}・餘額 ${F.num(h.balanceAfter)}</span></span>
+      <span class="shrink-0 text-[15px] font-bold money ${color}">${amount}</span>
+    </button>`;
+  }
+  function expiryRow(x) {
+    const dismissed = x.status === 'dismissed';
+    const tone = dismissed ? 'badge-slate' : (x.daysLeft <= 7 ? 'badge-rose' : 'badge-amber');
+    const label = dismissed ? '已使用' : (x.daysLeft < 0 ? '已過期' : (x.daysLeft === 0 ? '今天到期' : `${x.daysLeft} 天後`));
+    return `<div class="row ${dismissed ? 'opacity-60' : ''}">
+      <button type="button" class="min-w-0 flex-1 text-left" data-expiry="${x.id}"><span class="block text-sm font-semibold">${F.num(x.amount)} 點・${F.date(x.expiryDate, { year: true })}</span><span class="block text-[12px] muted">${esc(x.note || '')}</span></button>
+      <span class="badge ${tone}">${label}</span>
+      <button type="button" class="btn btn-xs ${dismissed ? 'btn-secondary' : 'btn-tonal'}" data-toggle-expiry="${x.id}">${dismissed ? '復原' : '已使用'}</button>
+    </div>`;
   }
 
-  async function openTimeline(pointId) {
-    state.currentPointId = pointId;
-    timelinePane.classList.remove('hidden');
-    timelineEl.innerHTML = `<li class="text-sm text-slate-400 py-6 flex items-center justify-center gap-2"><svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> 載入中…</li>`;
+  async function openPoint(id, keepOpen) {
+    state.current = state.points.find((p) => p.id === Number(id));
+    if (!state.current) return;
+    $('pdTitle').textContent = state.current.name;
+    if (!keepOpen) {
+      $('pdTimeline').innerHTML = A.skeletonRows(3, 'h-12');
+      $('pdExpiries').innerHTML = '';
+      A.sheet.open('pointSheet');
+    }
     try {
-      const data = await A.jsonFetch(A.api(`/points/${pointId}/histories`));
-      tlBalanceEl.textContent = A.fmtNumber(data.point.currentBalance);
-      tlPointNameEl.textContent = data.point.name;
-
-      const monthKey = new Date().toISOString().slice(0, 7);
-      const m = (data.stats || []).find((s) => s.period === monthKey)
-        || { earned: 0, spent: 0, net: 0 };
-      tlStatsEl.querySelector('[data-tlstat="earned"]').textContent = '+' + A.fmtNumber(m.earned);
-      tlStatsEl.querySelector('[data-tlstat="spent"]').textContent = '-' + A.fmtNumber(m.spent);
-      tlStatsEl.querySelector('[data-tlstat="net"]').textContent = (m.net >= 0 ? '+' : '') + A.fmtNumber(m.net);
-
-      timelineEl.innerHTML = '';
-      if (!data.histories.length) {
-        timelineEl.innerHTML = `<li class="text-sm text-slate-400">尚無歷史紀錄</li>`;
-      } else {
-        for (const h of data.histories) timelineEl.appendChild(timelineRowEl(h));
-      }
-
-      // Load expiries
-      await loadExpiries(pointId);
+      const [h, ex] = await Promise.all([A.get(`/points/${id}/histories`), A.get(`/points/${id}/expiries`)]);
+      state.histories = h.histories;
+      state.expiries = ex;
+      const p = h.point;
+      $('pdBalance').textContent = F.num(p.currentBalance);
+      $('pdValue').textContent = p.value != null ? `約值 ${F.money(p.value, { decimals: 0 })}（每點 ${F.num(p.valuePerPoint, 4)} 元）` : (p.issuer || '');
+      const m = (h.stats || [])[0];
+      $('pdMonth').textContent = m ? `${m.period}：+${F.num(m.earned)} / −${F.num(m.spent)}` : '';
+      $('pdTimeline').innerHTML = h.histories.length ? `<div class="list">${h.histories.map(historyRow).join('')}</div>` : A.emptyState('clock', '還沒有紀錄');
+      $('pdExpiries').innerHTML = ex.length ? `<div class="list">${ex.map(expiryRow).join('')}</div>` : '<div class="px-4 py-4 text-center text-sm muted">沒有設定到期提醒</div>';
     } catch (err) {
-      timelineEl.innerHTML = `<li class="text-sm text-rose-500">載入失敗：${err.message}</li>`;
+      $('pdTimeline').innerHTML = A.errorState(err);
     }
   }
 
-  // ----- Point modal -----
-  function openPointModal(p) {
-    pointForm.reset();
-    A.showError(pointFormError, '');
+  async function refreshAll() {
+    const id = state.current && state.current.id;
+    await loadPoints();
+    if (id && !$('pointSheet').hidden) openPoint(id, true);
+  }
+
+  // ─── History form ───
+  const hForm = $('historyForm');
+  function setHType(t) {
+    state.hType = t;
+    A.setPressed($('hTypeSeg'), '[data-type]', t, 'type');
+    $('hAmountLabel').textContent = t === 'set' ? '當下的實際餘額' : (t === 'earn' ? '獲得多少點' : '使用多少點');
+    $('hHint').textContent = t === 'set' ? '以這個時間點的實際餘額為準；之後補登更早的紀錄也不會改變它' : '';
+  }
+  $('hTypeSeg').addEventListener('click', (e) => { const b = e.target.closest('[data-type]'); if (b) setHType(b.dataset.type); });
+  function openHistory(h, type) {
+    hForm.reset();
+    A.showError($('hError'), '');
+    hForm.hid.value = h ? h.id : '';
+    $('hTitle').textContent = h ? '編輯紀錄' : `${state.current.name}`;
+    $('hDelete').hidden = !h;
+    setHType(h ? h.changeType : type);
+    hForm.amount.value = h ? (h.changeType === 'set' ? (h.targetBalance != null ? h.targetBalance : h.balanceAfter) : Math.abs(h.delta)) : '';
+    hForm.occurredAt.value = F.inputDateTime(h ? h.occurredAt : new Date());
+    hForm.occurredAt.dataset.initial = hForm.occurredAt.value;
+    hForm.note.value = h ? h.note || '' : '';
+    A.sheet.open('historySheet');
+    setTimeout(() => hForm.amount.focus(), 150);
+  }
+  document.querySelectorAll('[data-change]').forEach((b) => b.addEventListener('click', () => openHistory(null, b.dataset.change)));
+  $('pdTimeline').addEventListener('click', (e) => {
+    const r = e.target.closest('[data-history]');
+    if (r) openHistory(state.histories.find((h) => h.id === Number(r.dataset.history)));
+  });
+  hForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (hForm.amount.value === '') { A.showError($('hError'), '請輸入數量'); return; }
+    const body = {
+      changeType: state.hType,
+      amount: hForm.amount.value,
+      // Untouched "now" default → send the precise current time (the input drops
+      // seconds, which could otherwise order this before a just-created entry).
+      occurredAt: !hForm.occurredAt.value || (!hForm.hid.value && hForm.occurredAt.value === hForm.occurredAt.dataset.initial)
+        ? new Date().toISOString()
+        : (hForm.occurredAt.value === hForm.occurredAt.dataset.initial ? undefined : new Date(hForm.occurredAt.value).toISOString()),
+      note: hForm.note.value || null
+    };
+    const btn = hForm.closest('.sheet').querySelector('[type=submit]');
+    A.setLoading(btn, true);
+    try {
+      const hid = hForm.hid.value;
+      const r = hid
+        ? await A.send('PUT', `/points/${state.current.id}/histories/${hid}`, body)
+        : await A.send('POST', `/points/${state.current.id}/histories`, body);
+      A.sheet.close('historySheet');
+      A.toast(`餘額 ${F.num(r.currentBalance)}`);
+      refreshAll();
+    } catch (err) { A.showError($('hError'), err.message); } finally { A.setLoading(btn, false); }
+  });
+  $('hDelete').addEventListener('click', async () => {
+    if (!(await A.confirm('刪除這筆紀錄？餘額會重新計算。', { okText: '刪除', danger: true }))) return;
+    try {
+      await A.send('DELETE', `/points/${state.current.id}/histories/${hForm.hid.value}`);
+      A.sheet.close('historySheet');
+      refreshAll();
+    } catch (err) { A.showError($('hError'), err.message); }
+  });
+
+  // ─── Expiries ───
+  const eForm = $('expiryForm');
+  function openExpiry(x) {
+    eForm.reset();
+    A.showError($('eError'), '');
+    eForm.eid.value = x ? x.id : '';
+    $('eDelete').hidden = !x;
+    if (x) { eForm.amount.value = x.amount; eForm.expiryDate.value = x.expiryDate; eForm.note.value = x.note || ''; }
+    A.sheet.open('expirySheet');
+  }
+  $('addExpiryBtn').addEventListener('click', () => openExpiry(null));
+  $('pdExpiries').addEventListener('click', async (e) => {
+    const t = e.target.closest('[data-toggle-expiry]');
+    const ed = e.target.closest('[data-expiry]');
+    if (t) {
+      const x = state.expiries.find((y) => y.id === Number(t.dataset.toggleExpiry));
+      try {
+        await A.send('PUT', `/points/${state.current.id}/expiries/${x.id}`, { status: x.status === 'dismissed' ? 'active' : 'dismissed' });
+        refreshAll();
+      } catch (err) { A.toast(err.message, { type: 'error' }); }
+    } else if (ed) openExpiry(state.expiries.find((y) => y.id === Number(ed.dataset.expiry)));
+  });
+  eForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!eForm.amount.value || !eForm.expiryDate.value) { A.showError($('eError'), '請輸入數量與到期日'); return; }
+    const body = { amount: eForm.amount.value, expiryDate: eForm.expiryDate.value, note: eForm.note.value || null };
+    try {
+      const eid = eForm.eid.value;
+      if (eid) await A.send('PUT', `/points/${state.current.id}/expiries/${eid}`, body);
+      else await A.send('POST', `/points/${state.current.id}/expiries`, body);
+      A.sheet.close('expirySheet');
+      A.toast('已儲存到期提醒');
+      refreshAll();
+    } catch (err) { A.showError($('eError'), err.message); }
+  });
+  $('eDelete').addEventListener('click', async () => {
+    if (!(await A.confirm('刪除這個到期提醒？', { okText: '刪除', danger: true }))) return;
+    try {
+      await A.send('DELETE', `/points/${state.current.id}/expiries/${eForm.eid.value}`);
+      A.sheet.close('expirySheet');
+      refreshAll();
+    } catch (err) { A.showError($('eError'), err.message); }
+  });
+
+  // ─── Point form ───
+  const pForm = $('pointForm');
+  function openPointForm(p) {
+    pForm.reset();
+    A.showError($('pfError'), '');
+    pForm.id.value = p ? p.id : '';
+    $('pfTitle').textContent = p ? '編輯點數' : '新增點數';
+    $('pfDelete').hidden = !p;
+    $('pfBalanceField').hidden = !!p;
     if (p) {
-      pointModalTitle.textContent = '編輯點數';
-      pointForm.id.value = p.id;
-      pointForm.name.value = p.name || '';
-      pointForm.issuer.value = p.issuer || '';
-      pointForm.note.value = p.note || '';
-      pointForm.currentBalance.value = p.currentBalance;
-      pointForm.currentBalance.parentElement.classList.add('hidden');
-      deletePointBtn.classList.remove('hidden');
-    } else {
-      pointModalTitle.textContent = '新增點數';
-      pointForm.id.value = '';
-      pointForm.currentBalance.parentElement.classList.remove('hidden');
-      deletePointBtn.classList.add('hidden');
+      pForm.name.value = p.name;
+      pForm.issuer.value = p.issuer || '';
+      pForm.valuePerPoint.value = p.valuePerPoint != null ? p.valuePerPoint : '';
+      pForm.note.value = p.note || '';
     }
-    A.openModal('pointModal');
+    A.sheet.open('pointFormSheet');
   }
-  newPointBtn?.addEventListener('click', () => openPointModal(null));
-
-  pointForm?.addEventListener('submit', async (e) => {
+  $('newPointBtn').addEventListener('click', () => openPointForm(null));
+  document.addEventListener('click', (e) => { if (e.target.closest('[data-new-point]')) openPointForm(null); });
+  $('pdEdit').addEventListener('click', () => openPointForm(state.current));
+  pForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const submitBtn = pointForm.querySelector('button[type=submit]');
-    A.setLoading(submitBtn, true);
-    A.showError(pointFormError, '');
+    if (!pForm.name.value.trim()) { A.showError($('pfError'), '請輸入名稱'); return; }
+    const fd = new FormData(pForm);
+    const id = fd.get('id');
+    fd.delete('id');
+    if (!(fd.get('image') && fd.get('image').size > 0)) fd.delete('image');
+    if (id) fd.delete('currentBalance');
+    const btn = pForm.closest('.sheet').querySelector('[type=submit]');
+    A.setLoading(btn, true);
     try {
-      const fd = new FormData(pointForm);
-      const id = fd.get('id');
-      // strip empty file input
-      if (fd.get('image') && !(fd.get('image').size > 0)) fd.delete('image');
-      if (id) {
-        fd.delete('id');
-        fd.delete('currentBalance');
-        await A.jsonFetch(A.api(`/points/${id}`), { method: 'PUT', body: fd });
-      } else {
-        fd.delete('id');
-        await A.jsonFetch(A.api('/points'), { method: 'POST', body: fd });
-      }
-      A.closeModal('pointModal');
-      await loadPoints();
-    } catch (err) {
-      A.showError(pointFormError, err.message);
-    } finally {
-      A.setLoading(submitBtn, false);
-    }
+      await A.jsonFetch(A.api(id ? `/points/${id}` : '/points'), { method: id ? 'PUT' : 'POST', body: fd });
+      A.sheet.close('pointFormSheet');
+      A.toast(id ? '已更新' : '已新增點數');
+      refreshAll();
+    } catch (err) { A.showError($('pfError'), err.message); } finally { A.setLoading(btn, false); }
   });
-
-  deletePointBtn?.addEventListener('click', async () => {
-    const id = pointForm.id.value;
-    if (!id) return;
-    if (!confirm('確定要刪除此點數及其所有歷史紀錄？')) return;
+  $('pfDelete').addEventListener('click', async () => {
+    if (!(await A.confirm('刪除此點數與所有紀錄、到期提醒？', { okText: '刪除', danger: true }))) return;
     try {
-      await A.jsonFetch(A.api(`/points/${id}`), { method: 'DELETE' });
-      A.closeModal('pointModal');
-      timelinePane.classList.add('hidden');
-      state.currentPointId = null;
-      await loadPoints();
-    } catch (err) { A.showError(pointFormError, err.message); }
+      await A.send('DELETE', `/points/${pForm.id.value}`);
+      A.sheet.close('pointFormSheet');
+      A.sheet.close('pointSheet');
+      state.current = null;
+      loadPoints();
+    } catch (err) { A.showError($('pfError'), err.message); }
   });
 
-  // ----- History modal -----
-  function openHistoryModal(h) {
-    historyForm.reset();
-    A.showError(historyFormError, '');
-    if (h) {
-      historyModalTitle.textContent = '編輯紀錄';
-      historyForm.hid.value = h.id;
-      historyForm.changeType.value = h.changeType;
-      const amt = h.changeType === 'set' ? h.balanceAfter : Math.abs(Number(h.delta));
-      historyForm.amount.value = amt;
-      // datetime-local needs YYYY-MM-DDTHH:MM
-      const d = new Date(h.occurredAt);
-      const pad = (n) => String(n).padStart(2, '0');
-      historyForm.occurredAt.value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-      historyForm.note.value = h.note || '';
-      deleteHistoryBtn.classList.remove('hidden');
-    } else {
-      historyModalTitle.textContent = '新增紀錄';
-      historyForm.hid.value = '';
-      const d = new Date();
-      const pad = (n) => String(n).padStart(2, '0');
-      historyForm.occurredAt.value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-      deleteHistoryBtn.classList.add('hidden');
-    }
-    A.openModal('historyModal');
-  }
-  addHistoryBtn?.addEventListener('click', () => {
-    if (!state.currentPointId) return;
-    openHistoryModal(null);
-  });
-  closeTimelineBtn?.addEventListener('click', () => {
-    timelinePane.classList.add('hidden');
-    state.currentPointId = null;
-  });
-
-  historyForm?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const submitBtn = historyForm.querySelector('button[type=submit]');
-    A.setLoading(submitBtn, true);
-    A.showError(historyFormError, '');
-    try {
-      const data = {
-        changeType: historyForm.changeType.value,
-        amount: historyForm.amount.value,
-        occurredAt: historyForm.occurredAt.value
-          ? new Date(historyForm.occurredAt.value).toISOString()
-          : new Date().toISOString(),
-        note: historyForm.note.value
-      };
-      const hid = historyForm.hid.value;
-      if (hid) {
-        await A.jsonFetch(A.api(`/points/${state.currentPointId}/histories/${hid}`), {
-          method: 'PUT', body: data
-        });
-      } else {
-        await A.jsonFetch(A.api(`/points/${state.currentPointId}/histories`), {
-          method: 'POST', body: data
-        });
-      }
-      A.closeModal('historyModal');
-      await loadPoints();
-      await openTimeline(state.currentPointId);
-    } catch (err) {
-      A.showError(historyFormError, err.message);
-    } finally {
-      A.setLoading(submitBtn, false);
-    }
-  });
-
-  deleteHistoryBtn?.addEventListener('click', async () => {
-    const hid = historyForm.hid.value;
-    if (!hid || !state.currentPointId) return;
-    if (!confirm('確定刪除這筆紀錄？將重新計算餘額。')) return;
-    try {
-      await A.jsonFetch(A.api(`/points/${state.currentPointId}/histories/${hid}`), { method: 'DELETE' });
-      A.closeModal('historyModal');
-      await loadPoints();
-      await openTimeline(state.currentPointId);
-    } catch (err) {
-      A.showError(historyFormError, err.message);
-    }
-  });
-
-  // ---------- Point Expiries ----------
-
-  function expiryRowEl(exp) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const daysLeft = Math.ceil((new Date(exp.expiryDate) - today) / 86400000);
-    const isDismissed = exp.status === 'dismissed';
-
-    let urgency = 'text-amber-600';
-    let label = `${daysLeft} 天後到期`;
-    if (daysLeft <= 0) { urgency = 'text-rose-600'; label = daysLeft === 0 ? '今天到期！' : '已過期'; }
-    else if (daysLeft <= 3) { urgency = 'text-rose-500'; label = `⚠️ ${daysLeft} 天`; }
-
-    const row = document.createElement('div');
-    row.className = `flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs ${isDismissed ? 'bg-slate-50 opacity-60' : 'bg-amber-50 border border-amber-100'}`;
-    row.innerHTML = `
-      <div class="min-w-0">
-        <span class="font-semibold">${A.fmtNumber(exp.amount)}</span> 點 · 
-        <span>${exp.expiryDate}</span>
-        ${!isDismissed ? `<span class="${urgency} font-medium ml-1">${label}</span>` : '<span class="text-slate-400 ml-1">已解除</span>'}
-        ${exp.note ? `<span class="text-slate-400 ml-1">(${exp.note})</span>` : ''}
-      </div>
-      <div class="flex gap-1 flex-shrink-0">
-        ${isDismissed
-          ? `<button data-restore="${exp.id}" class="px-2 py-0.5 rounded bg-brand-100 text-brand-700 hover:bg-brand-200">復原</button>`
-          : `<button data-dismiss="${exp.id}" class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 hover:bg-emerald-200">設定使用</button>`
-        }
-        <button data-edit="${exp.id}" class="px-2 py-0.5 rounded bg-slate-100 text-slate-700 hover:bg-slate-200">編輯</button>
-        <button data-delete="${exp.id}" class="px-2 py-0.5 rounded bg-rose-100 text-rose-700 hover:bg-rose-200">刪除</button>
-      </div>`;
-
-    const pid = state.currentPointId;
-
-    // Dismiss
-    row.querySelector('[data-dismiss]')?.addEventListener('click', async () => {
-      await A.jsonFetch(A.api(`/points/${pid}/expiries/${exp.id}`), { method: 'PUT', body: { status: 'dismissed' } });
-      await loadExpiries(pid);
-    });
-
-    // Restore
-    row.querySelector('[data-restore]')?.addEventListener('click', async () => {
-      await A.jsonFetch(A.api(`/points/${pid}/expiries/${exp.id}`), { method: 'PUT', body: { status: 'active' } });
-      await loadExpiries(pid);
-    });
-
-    // Delete
-    row.querySelector('[data-delete]').addEventListener('click', async () => {
-      if (!confirm('確定刪除此到期設定？')) return;
-      await A.jsonFetch(A.api(`/points/${pid}/expiries/${exp.id}`), { method: 'DELETE' });
-      await loadExpiries(pid);
-    });
-
-    // Edit
-    row.querySelector('[data-edit]')?.addEventListener('click', () => {
-      expiryForm.eid.value = exp.id;
-      expiryForm.amount.value = exp.amount;
-      expiryForm.expiryDate.value = exp.expiryDate;
-      expiryForm.note.value = exp.note || '';
-      document.getElementById('expiryModalTitle').textContent = '編輯提醒';
-      document.getElementById('cancelEditExpiryBtn').classList.remove('hidden');
-    });
-
-    return row;
-  }
-
-  async function loadExpiries(pointId) {
-    try {
-      tlExpiries.classList.remove('hidden');
-      tlExpiryList.innerHTML = '<div class="text-xs text-slate-400 flex items-center justify-center gap-2 py-4"><svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> 載入中…</div>';
-      const expiries = await A.jsonFetch(A.api(`/points/${pointId}/expiries`));
-      state.currentExpiries = expiries;
-      if (expiries.length) {
-        tlExpiryList.innerHTML = '';
-        for (const e of expiries) tlExpiryList.appendChild(expiryRowEl(e));
-      } else {
-        tlExpiries.classList.add('hidden');
-      }
-    } catch (err) {
-      console.error('loadExpiries', err);
-    }
-  }
-
-  addExpiryBtn?.addEventListener('click', () => {
-    if (!state.currentPointId) return;
-    expiryForm.reset();
-    expiryForm.eid.value = '';
-    document.getElementById('expiryModalTitle').textContent = '新增提醒';
-    document.getElementById('cancelEditExpiryBtn').classList.add('hidden');
-    A.showError(expiryFormError, '');
-    A.openModal('expiryModal');
-  });
-
-  document.getElementById('cancelEditExpiryBtn')?.addEventListener('click', () => {
-    expiryForm.reset();
-    expiryForm.eid.value = '';
-    document.getElementById('expiryModalTitle').textContent = '新增提醒';
-    document.getElementById('cancelEditExpiryBtn').classList.add('hidden');
-    A.showError(expiryFormError, '');
-  });
-
-  expiryForm?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const submitBtn = expiryForm.querySelector('button[type=submit]');
-    A.setLoading(submitBtn, true);
-    A.showError(expiryFormError, '');
-    try {
-      const data = {
-        amount: expiryForm.amount.value,
-        expiryDate: expiryForm.expiryDate.value,
-        note: expiryForm.note.value || null
-      };
-      const eid = expiryForm.eid.value;
-      const pid = state.currentPointId;
-      if (eid) {
-        await A.jsonFetch(A.api(`/points/${pid}/expiries/${eid}`), { method: 'PUT', body: data });
-      } else {
-        await A.jsonFetch(A.api(`/points/${pid}/expiries`), { method: 'POST', body: data });
-      }
-      
-      // Reset form to "Add" mode after successful save
-      expiryForm.reset();
-      expiryForm.eid.value = '';
-      document.getElementById('expiryModalTitle').textContent = '新增提醒';
-      document.getElementById('cancelEditExpiryBtn').classList.add('hidden');
-      
-      await loadExpiries(pid);
-    } catch (err) {
-      A.showError(expiryFormError, err.message);
-    } finally {
-      A.setLoading(submitBtn, false);
-    }
+  $('pointList').addEventListener('click', (e) => {
+    const r = e.target.closest('[data-point]');
+    if (r) openPoint(r.dataset.point);
   });
 
   loadPoints();

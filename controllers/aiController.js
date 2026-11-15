@@ -82,6 +82,10 @@ const SYSTEM_PROMPT = `你是一個專門解析中文「信用卡 / 支付回饋
       商家或消費類型各萃取一個能唯一辨識的核心關鍵字（規則同 merchantKeywords，去除地址／分店／
       標點），例如「不含全聯、超商、水電瓦斯繳費」-> ["全聯","超商","繳費"]。注意這是「命中即排除」，
       與 merchantKeywords（命中才計入）方向相反，兩者不要混用。
+  18. minimumSpendScope 只能是 "perTransaction" 或 "cycleTotal"：門檻是「單筆滿 X 元」時填
+      "perTransaction"（預設）；門檻是「當月/當期累積消費滿 X 元」才有回饋時填 "cycleTotal"，
+      並把 X 填入 minimumSpend。
+  19. requiresRegistration 為布林值：文字提到「需登錄」「須至官網登錄」「限登錄者」時填 true，否則 false。
 
 JSON Schema：
 {
@@ -94,6 +98,8 @@ JSON Schema：
   "rewardType": "point"|"cash"|"coupon"|"other",
   "maxReward": number|null,
   "minimumSpend": number|null,
+  "minimumSpendScope": "perTransaction"|"cycleTotal",
+  "requiresRegistration": boolean,
   "cardNames": string[],
   "paymentMethodNames": string[],
   "cycleType": "none"|"weekly"|"biweekly"|"monthly",

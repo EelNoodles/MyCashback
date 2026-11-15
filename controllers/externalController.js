@@ -1,23 +1,28 @@
 'use strict';
 
+/**
+ * Read-only API for the user's own tools (spreadsheets, iOS Shortcuts,
+ * bookkeeping apps), authenticated with the same API key as /api/ingest.
+ */
+
 const { Op } = require('sequelize');
-const { Card, CashbackEvent, PaymentMethod } = require('../models');
-const { computeEventUsage, parseMerchantKeywords } = require('../services/cashbackCycleService');
+const { Card, CardTransaction, Point, PointExpiry } = require('../models');
+const svc = require('../services/cashbackCycleService');
+const E = require('../services/rewardEngine');
+const V = require('../utils/validate');
+const cashback = require('./cashbackController');
+const txnCtrl = require('./transactionController');
+const dashboard = require('./dashboardController');
+const pointCtrl = require('./pointController');
 
-function todayStr() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-// Builds an absolute URL from the app's own request (works regardless of
-// domain/BASE_URL) so an external tool can fetch the image directly without
-// knowing anything about how this app is hosted.
+/** Absolute URL for an uploaded image so external tools can fetch it directly. */
 function absoluteUrl(req, relPath) {
   if (!relPath) return null;
   const baseUrl = (process.env.BASE_URL || '').replace(/\/$/, '');
   return `${req.protocol}://${req.get('host')}${baseUrl}${relPath}`;
 }
 
-function eventToPublic(ev, usage) {
+function eventToPublic(ev, req) {
   return {
     id: ev.id,
     title: ev.title,
@@ -28,76 +33,126 @@ function eventToPublic(ev, usage) {
     rewardType: ev.rewardType,
     maxReward: ev.maxReward,
     minimumSpend: ev.minimumSpend,
+    minimumSpendScope: ev.minimumSpendScope || 'perTransaction',
     startDate: ev.startDate,
     endDate: ev.endDate,
     cycleType: ev.cycleType,
     cycleAnchorDay: ev.cycleAnchorDay,
     matchUnspecifiedPayment: ev.matchUnspecifiedPayment,
     requireMerchantMatch: ev.requireMerchantMatch,
-    merchantKeywords: ev.requireMerchantMatch ? parseMerchantKeywords(ev.merchantKeywords) : [],
+    merchantKeywords: ev.requireMerchantMatch ? E.parseMerchantKeywords(ev.merchantKeywords) : [],
     excludeMerchantMatch: ev.excludeMerchantMatch,
-    excludeMerchantKeywords: ev.excludeMerchantMatch ? parseMerchantKeywords(ev.excludeMerchantKeywords) : [],
+    excludeMerchantKeywords: ev.excludeMerchantMatch ? E.parseMerchantKeywords(ev.excludeMerchantKeywords) : [],
     rewardRounding: ev.rewardRounding,
     rewardCalcMode: ev.rewardCalcMode,
     rewardPrecision: ev.rewardPrecision,
+    requiresRegistration: !!ev.requiresRegistration,
+    registeredAt: ev.registeredAt || null,
+    needsRegistration: E.needsRegistration(ev),
+    cards: (ev.cards || []).map((c) => ({ id: c.id, name: c.name, imageUrl: absoluteUrl(req, c.imageUrl) })),
     paymentMethods: (ev.paymentMethods || []).map((p) => ({ id: p.id, name: p.name })),
     sourceUrl: ev.sourceUrl,
-    usage
+    timing: ev.timing,
+    usage: ev.usage
   };
 }
 
-// GET /api/external/cards?status=active|expired|all
-// For each of the caller's cards: a renderable image URL, plus every
-// cashback event tied to that card with its full conditions and current
-// remaining-quota usage — meant for another tool of the user's own to pull
-// and reorganise, not for browsing in this app's own UI.
-exports.listCardsSummary = async (req, res, next) => {
-  try {
-    const userId = req.user.id;
-    const status = ['active', 'expired', 'all'].includes(req.query.status) ? req.query.status : 'active';
-    const today = todayStr();
+const STATUSES = ['active', 'ongoing', 'upcoming', 'expired', 'all'];
+const statusOf = (q) => (STATUSES.includes(q) ? q : 'active');
 
-    const cards = await Card.findAll({
-      where: { userId },
-      order: [['kind', 'ASC'], ['name', 'ASC']]
-    });
+// GET /api/external/cards?status=active|ongoing|upcoming|expired|all
+exports.listCardsSummary = V.ah(async (req, res) => {
+  const userId = req.user.id;
+  const [cards, events] = await Promise.all([
+    Card.findAll({ where: { userId }, order: [['kind', 'ASC'], ['name', 'ASC']] }),
+    cashback.findEvents(userId, { status: statusOf(req.query.status) }).then((evs) => svc.withUsage(evs))
+  ]);
+  res.json({
+    generatedAt: new Date().toISOString(),
+    cards: cards.map((card) => ({
+      id: card.id,
+      name: card.name,
+      kind: card.kind,
+      issuer: card.issuer,
+      network: card.network,
+      lastFour: card.lastFour,
+      color: card.color,
+      imageUrl: absoluteUrl(req, card.imageUrl),
+      events: events
+        .filter((ev) => (ev.cards || []).some((c) => c.id === card.id))
+        .map((ev) => eventToPublic(ev, req))
+    }))
+  });
+});
 
-    const eventWhere = { userId };
-    if (status === 'active') {
-      eventWhere[Op.and] = [{ [Op.or]: [{ endDate: null }, { endDate: { [Op.gte]: today } }] }];
-    } else if (status === 'expired') {
-      eventWhere.endDate = { [Op.lt]: today };
+// GET /api/external/events?status=&cardId=&paymentMethodId=&q=
+exports.listEvents = V.ah(async (req, res) => {
+  const events = await cashback.findEvents(req.user.id, { ...req.query, status: statusOf(req.query.status) });
+  const out = await svc.withUsage(events);
+  res.json({ generatedAt: new Date().toISOString(), events: out.map((ev) => eventToPublic(ev, req)) });
+});
+
+// GET /api/external/recommend?amount=&merchant=&cardId=&paymentMethodId=&at=&limit=
+exports.recommend = V.ah(async (req, res) => {
+  const result = await cashback.recommendFor(req.user.id, req.query);
+  result.options = result.options.map((o) => ({
+    ...o,
+    card: { ...o.card, imageUrl: absoluteUrl(req, o.card.imageUrl) },
+    paymentMethod: o.paymentMethod ? { ...o.paymentMethod, imageUrl: absoluteUrl(req, o.paymentMethod.imageUrl) } : null
+  }));
+  const best = result.options[0];
+  result.best = best && best.totalReward > 0
+    ? {
+      text: `${best.card.name}${best.paymentMethod ? ' + ' + best.paymentMethod.name : ''}：約回饋 ${best.totalReward}（${best.effectiveRate}%）`,
+      cardName: best.card.name,
+      paymentMethodName: best.paymentMethod ? best.paymentMethod.name : null,
+      totalReward: best.totalReward,
+      effectiveRate: best.effectiveRate
     }
+    : null;
+  res.json(result);
+});
 
-    const events = await CashbackEvent.findAll({
-      where: eventWhere,
-      include: [
-        { model: Card, as: 'cards', through: { attributes: [] }, attributes: ['id'] },
-        { model: PaymentMethod, as: 'paymentMethods', through: { attributes: [] }, attributes: ['id', 'name'] }
-      ],
-      order: [['endDate', 'ASC'], ['startDate', 'ASC'], ['id', 'DESC']]
-    });
+// GET /api/external/summary
+exports.summary = V.ah(async (req, res) => {
+  res.json(await dashboard.buildSummary(req.user.id));
+});
 
-    const cardsOut = [];
-    for (const card of cards) {
-      const cardEvents = events.filter((ev) => (ev.cards || []).some((c) => c.id === card.id));
-      const eventsOut = [];
-      for (const ev of cardEvents) {
-        const usage = await computeEventUsage(ev);
-        eventsOut.push(eventToPublic(ev, usage));
-      }
-      cardsOut.push({
-        id: card.id,
-        name: card.name,
-        kind: card.kind,
-        issuer: card.issuer,
-        network: card.network,
-        color: card.color,
-        imageUrl: absoluteUrl(req, card.imageUrl),
-        events: eventsOut
-      });
-    }
+// GET /api/external/transactions?from=&to=&cardId=&paymentMethodId=&q=&page=&pageSize=
+exports.listTransactions = V.ah(async (req, res) => {
+  const where = txnCtrl.listWhere(req.user.id, req.query);
+  const { page, pageSize, offset } = V.pagination(req.query, { defaultSize: 50, maxSize: 500 });
+  const { rows, count } = await CardTransaction.findAndCountAll({
+    where,
+    include: txnCtrl.txnInclude(),
+    order: [['transactionAt', 'DESC'], ['id', 'DESC']],
+    limit: pageSize,
+    offset,
+    distinct: true
+  });
+  res.json({ items: await txnCtrl.attachMatchedEvents(req.user.id, rows.map(txnCtrl.toPublicTxn)), total: count, page, pageSize });
+});
 
-    res.json({ generatedAt: new Date().toISOString(), cards: cardsOut });
-  } catch (err) { next(err); }
-};
+// GET /api/external/points
+exports.listPoints = V.ah(async (req, res) => {
+  const [rows, expiries] = await Promise.all([
+    Point.findAll({ where: { userId: req.user.id }, order: [['name', 'ASC']] }),
+    PointExpiry.findAll({ where: { userId: req.user.id, status: 'active', expiryDate: { [Op.gte]: E.todayDateOnly() } }, order: [['expiryDate', 'ASC']] })
+  ]);
+  res.json({
+    generatedAt: new Date().toISOString(),
+    points: rows.map((p) => {
+      const o = pointCtrl.pointToPublic(p);
+      return {
+        id: o.id,
+        name: o.name,
+        issuer: o.issuer,
+        currentBalance: o.currentBalance,
+        valuePerPoint: o.valuePerPoint,
+        value: o.value,
+        imageUrl: absoluteUrl(req, o.imageUrl),
+        expiries: expiries.filter((x) => x.pointId === p.id).map((x) => ({ amount: Number(x.amount), expiryDate: x.expiryDate, note: x.note }))
+      };
+    })
+  });
+});
